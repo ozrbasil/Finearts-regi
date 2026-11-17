@@ -3,10 +3,11 @@ const MAX_IND = 4;
 const POLL_MS = 4000;
 
 /* ===== State ===== */
-let role = null, view = "registration", token = null, pollT = null, lastState = "";
+let role = null, token = null, pollT = null, lastState = "";
 let comps = [], inds = [], grps = [], teamCreds = [];
+let settings = { editingEnabled: false, registrationOpen: true };
 let adminTeam = "", compTab = "individual", editingId = null, pendingDel = null, formKey = "";
-let editingTeam = null;
+let editingTeam = null, editingIndId = null, pendingReset = false;
 
 /* ===== Helpers ===== */
 const $ = (id) => document.getElementById(id);
@@ -21,6 +22,14 @@ function toast(t) {
   toastT = setTimeout(() => $("toast").classList.remove("show"), 2200);
 }
 function showNote(t) { $("dbNote").textContent = t; $("dbNote").classList.remove("hidden"); }
+
+/* Notice shown to teams when registration is stopped */
+const closedNote = document.createElement("div");
+closedNote.id = "regClosed";
+closedNote.className = "empty hidden";
+closedNote.style.marginBottom = "16px";
+closedNote.textContent = "Registration is stopped by the admin. You cannot add new participants right now.";
+document.querySelector("#vRegistration .types").before(closedNote);
 
 /* ===== API ===== */
 async function api(method, path, body) {
@@ -53,6 +62,7 @@ function signOut() {
   role = null; token = null; lastState = "";
   stopPolling();
   comps = []; inds = []; grps = []; teamCreds = [];
+  editingIndId = null; editingTeam = null; pendingReset = false;
   $("app").classList.add("hidden");
   $("login").classList.remove("hidden");
   $("lPass").value = ""; $("lErr").textContent = "";
@@ -64,7 +74,7 @@ function enterApp() {
   $("app").classList.remove("hidden");
   const isAdmin = role.kind === "admin";
   const items = isAdmin
-    ? [["comps", "Competitions"], ["adminRegs", "Registrations"], ["teams", "Teams"]]
+    ? [["comps", "Competitions"], ["controls", "Controls"], ["adminRegs", "Registrations"], ["teams", "Teams"]]
     : [["registration", "Registration"], ["dashboard", "My Dashboard"]];
   $("nav").innerHTML = items.map(([v, l]) => `<button class="nav" type="button" data-view="${v}">${l}</button>`).join("");
   $("nav").querySelectorAll(".nav").forEach(b => b.addEventListener("click", () => showView(b.dataset.view)));
@@ -75,8 +85,7 @@ function enterApp() {
 }
 
 function showView(v) {
-  view = v;
-  const map = { registration: "vRegistration", dashboard: "vDashboard", comps: "vComps", adminRegs: "vAdminRegs", teams: "vTeams" };
+  const map = { registration: "vRegistration", dashboard: "vDashboard", comps: "vComps", controls: "vControls", adminRegs: "vAdminRegs", teams: "vTeams" };
   Object.values(map).forEach(id => $(id).classList.toggle("hidden", id !== map[v]));
   document.querySelectorAll(".nav").forEach(b => b.classList.toggle("active", b.dataset.view === v));
   renderAll();
@@ -98,6 +107,7 @@ async function refresh() {
     inds = s.inds;
     grps = s.grps;
     teamCreds = s.teams;
+    settings = s.settings;
     renderAll();
   } catch (err) {
     if (role) showNote("Connection problem: " + err.message);
@@ -106,8 +116,8 @@ async function refresh() {
 
 function renderAll() {
   if (!role) return;
-  if (role.kind === "team") { renderTeamForms(); renderDash(); }
-  else { renderComps(); renderAdminRegs(); renderTeams(); }
+  if (role.kind === "team") { renderRegState(); renderTeamForms(); renderDash(); }
+  else { renderComps(); renderControls(); renderAdminRegs(); renderTeams(); }
 }
 
 /* ===== Team: registration forms ===== */
@@ -117,6 +127,13 @@ document.querySelectorAll(".type-opt").forEach(btn => btn.addEventListener("clic
   $("indForm").classList.toggle("hidden", g);
   $("grpForm").classList.toggle("hidden", !g);
 }));
+
+function renderRegState() {
+  const open = settings.registrationOpen;
+  closedNote.classList.toggle("hidden", open);
+  document.querySelectorAll("#indForm button[type=submit], #grpForm button[type=submit]")
+    .forEach(b => { b.disabled = !open; });
+}
 
 function renderTeamForms() {
   const indList = comps.filter(c => c.type === "individual").map(c => c.name);
@@ -141,6 +158,7 @@ $("indChecks").addEventListener("change", (e) => {
 
 $("indForm").addEventListener("submit", async (e) => {
   e.preventDefault();
+  if (!settings.registrationOpen) return toast("Registration is stopped by the admin");
   const name = $("iName").value.trim(), cls = $("iClass").value.trim();
   const chosen = [...document.querySelectorAll('input[name="ind"]:checked')].map(c => c.value);
   if (!name || !cls) return;
@@ -168,6 +186,7 @@ $("addMember").addEventListener("click", addMemberRow);
 
 $("grpForm").addEventListener("submit", async (e) => {
   e.preventDefault();
+  if (!settings.registrationOpen) return toast("Registration is stopped by the admin");
   const leader = $("gLeader").value.trim(), leaderCls = $("gLeaderCls").value.trim();
   const members = [...document.querySelectorAll(".mrow")]
     .map(r => ({ name: r.querySelector(".mem").value.trim(), cls: r.querySelector(".memCls").value.trim() }))
@@ -188,19 +207,55 @@ $("grpForm").addEventListener("submit", async (e) => {
 /* ===== Team: dashboard (server already limits this to the team's own rows) ===== */
 function renderDash() {
   const t = role.team;
+  if (!settings.editingEnabled) editingIndId = null;
   const I = inds.filter(x => x.team === t).sort(byOrder), G = grps.filter(x => x.team === t);
   $("dashLead").textContent = "Showing registrations for " + teamName(t) + " only.";
   $("sInd").textContent = I.length; $("sGrp").textContent = G.length; $("sReg").textContent = I.length + G.length;
-  $("dashInd").innerHTML = indTable(I);
+  $("dashInd").innerHTML = indTable(I, settings.editingEnabled);
   $("dashGrp").innerHTML = grpCards(G);
 }
-function indTable(I) {
+
+function indTable(I, canEdit = false) {
   if (!I.length) return `<div class="empty">No individual participants yet.</div>`;
-  return `<div class="table-wrap"><table><thead><tr><th>#</th><th>Name</th><th>Class</th><th>Competitions</th></tr></thead><tbody>
-    ${I.map((p, i) => `<tr><td>${i + 1}</td><td>${esc(p.name)}</td><td>${esc(p.cls)}</td>
-    <td><div class="chips">${p.comps.map(c => `<span class="chip">${esc(c)}</span>`).join("")}</div></td></tr>`).join("")}
+  return `<div class="table-wrap"><table><thead><tr><th>#</th><th>Name</th><th>Class</th><th>Competitions</th>${canEdit ? "<th></th>" : ""}</tr></thead><tbody>
+    ${I.map((p, i) => canEdit && editingIndId === p.id ? editRow(p, i) : `<tr><td>${i + 1}</td><td>${esc(p.name)}</td><td>${esc(p.cls)}</td>
+    <td><div class="chips">${p.comps.map(c => `<span class="chip">${esc(c)}</span>`).join("")}</div></td>
+    ${canEdit ? `<td><button class="btn ghost sm" type="button" data-ind-act="edit" data-id="${p.id}">Edit</button></td>` : ""}</tr>`).join("")}
     </tbody></table></div>`;
 }
+
+function editRow(p, i) {
+  const indList = comps.filter(c => c.type === "individual").map(c => c.name);
+  return `<tr>
+    <td>${i + 1}</td>
+    <td><input type="text" id="eName" value="${esc(p.name)}"></td>
+    <td><input type="text" id="eCls" value="${esc(p.cls)}"></td>
+    <td><div class="checks">${indList.map(n => `<label><input type="checkbox" name="eComp" value="${esc(n)}" ${p.comps.includes(n) ? "checked" : ""}><span>${esc(n)}</span></label>`).join("")}</div></td>
+    <td><div class="acts"><button class="btn sm" type="button" data-ind-act="save" data-id="${p.id}">Save</button>
+    <button class="btn ghost sm" type="button" data-ind-act="cancel">Cancel</button></div></td></tr>`;
+}
+
+$("dashInd").addEventListener("click", async (e) => {
+  const b = e.target.closest("button[data-ind-act]");
+  if (!b) return;
+  const act = b.dataset.indAct, id = b.dataset.id;
+  if (act === "edit") { editingIndId = id; renderDash(); return; }
+  if (act === "cancel") { editingIndId = null; renderDash(); return; }
+  if (act === "save") {
+    const name = $("eName").value.trim(), cls = $("eCls").value.trim();
+    const chosen = [...document.querySelectorAll('input[name="eComp"]:checked')].map(c => c.value);
+    if (!name || !cls) return toast("Name and class are required");
+    if (!chosen.length) return toast("Choose at least one competition");
+    if (chosen.length > MAX_IND) return toast("Maximum 4 items per participant");
+    try {
+      await api("PATCH", "/api/individuals/" + id, { name, cls, comps: chosen });
+      editingIndId = null; toast("Participant updated");
+      await refresh();
+    } catch (err) { toast(err.message); }
+    renderDash();
+  }
+});
+
 function grpCards(G) {
   if (!G.length) return `<div class="empty">No groups registered yet.</div>`;
   return `<div class="table-wrap"><table><thead><tr><th>Team Leader</th><th>Class</th><th>Members</th><th>Competitions</th></tr></thead><tbody>
@@ -210,39 +265,41 @@ function grpCards(G) {
     </tbody></table></div>`;
 }
 
-/* ===== Admin: teams ===== */
-function renderTeams() {
-  const rows = [1, 2, 3, 4].map(n => {
-    const t = teamCreds.find(x => x.team === n) || { team: n, username: "" };
-    if (editingTeam === n) return `<tr><td>${teamName(n)}</td>
-      <td><input type="text" id="tUser" value="${esc(t.username)}"></td>
-      <td><input type="password" id="tPass" placeholder="New password (blank = keep)" autocomplete="new-password"></td>
-      <td><div class="acts"><button class="btn sm" type="button" data-tact="save" data-id="${n}">Save</button>
-      <button class="btn ghost sm" type="button" data-tact="cancel">Cancel</button></div></td></tr>`;
-    return `<tr><td>${teamName(n)}</td><td>${esc(t.username)}</td><td><span class="hint">••••••••</span></td>
-      <td><button class="btn ghost sm" type="button" data-tact="edit" data-id="${n}">Edit</button></td></tr>`;
-  }).join("");
-  $("teamTable").innerHTML = `<table><thead><tr><th>Team</th><th>Username</th><th>Password</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+/* ===== Admin: controls (Stop/Continue, Edit enable/disable, Reset) ===== */
+function renderControls() {
+  const stopped = !settings.registrationOpen;
+  $("regStatus").textContent = stopped
+    ? "Stopped: users cannot add new participants."
+    : "Open: users can add new participants.";
+  $("btnStop").classList.toggle("hidden", stopped);
+  $("btnContinue").classList.toggle("hidden", !stopped);
+
+  $("editStatus").textContent = settings.editingEnabled
+    ? "Enabled: users can edit their participants."
+    : "Disabled: users cannot edit their participants.";
+  $("btnEdit").textContent = settings.editingEnabled ? "Disable" : "Enable";
+
+  $("btnReset").textContent = pendingReset ? "Confirm reset" : "Reset";
 }
 
-$("teamTable").addEventListener("click", async (e) => {
-  const b = e.target.closest("button[data-tact]");
+$("controls").addEventListener("click", async (e) => {
+  const b = e.target.closest("button[data-ctl]");
   if (!b) return;
-  const act = b.dataset.tact, n = Number(b.dataset.id);
-  if (act === "edit") { editingTeam = n; renderTeams(); return; }
-  if (act === "cancel") { editingTeam = null; renderTeams(); return; }
-  if (act === "save") {
-    const username = $("tUser").value.trim(), password = $("tPass").value;
-    if (!/^[A-Za-z0-9_]{3,}$/.test(username)) return toast("Username: letters, numbers or _ (min 3)");
-    if (password && password.length < 4) return toast("Password must be at least 4 characters");
-    if (teamCreds.some(t => t.username === username && t.team !== n)) return toast("That username is already used");
-    try {
-      await api("PATCH", "/api/teams/" + n, { username, password });
-      editingTeam = null; toast(teamName(n) + " updated");
-      await refresh();
-    } catch (err) { toast(err.message); }
-    renderTeams();
-  }
+  const act = b.dataset.ctl;
+  if (act !== "reset") pendingReset = false;
+  try {
+    if (act === "stop") await api("PATCH", "/api/admin/settings", { registrationOpen: false });
+    if (act === "continue") await api("PATCH", "/api/admin/settings", { registrationOpen: true });
+    if (act === "edit") await api("PATCH", "/api/admin/settings", { editingEnabled: !settings.editingEnabled });
+    if (act === "reset") {
+      if (!pendingReset) { pendingReset = true; renderControls(); return; }
+      const r = await api("POST", "/api/admin/reset");
+      pendingReset = false;
+      toast(`Removed ${r.removed} registrations`);
+    }
+    await refresh();
+  } catch (err) { toast(err.message); }
+  renderControls();
 });
 
 /* ===== Admin: competitions ===== */
@@ -300,6 +357,41 @@ $("addComp").addEventListener("submit", async (e) => {
     toast("Competition added");
     await refresh();
   } catch (err) { toast(err.message); }
+});
+
+/* ===== Admin: teams ===== */
+function renderTeams() {
+  const rows = [1, 2, 3, 4].map(n => {
+    const t = teamCreds.find(x => x.team === n) || { team: n, username: "" };
+    if (editingTeam === n) return `<tr><td>${teamName(n)}</td>
+      <td><input type="text" id="tUser" value="${esc(t.username)}"></td>
+      <td><input type="password" id="tPass" placeholder="New password (blank = keep)" autocomplete="new-password"></td>
+      <td><div class="acts"><button class="btn sm" type="button" data-tact="save" data-id="${n}">Save</button>
+      <button class="btn ghost sm" type="button" data-tact="cancel">Cancel</button></div></td></tr>`;
+    return `<tr><td>${teamName(n)}</td><td>${esc(t.username)}</td><td><span class="hint">••••••••</span></td>
+      <td><button class="btn ghost sm" type="button" data-tact="edit" data-id="${n}">Edit</button></td></tr>`;
+  }).join("");
+  $("teamTable").innerHTML = `<table><thead><tr><th>Team</th><th>Username</th><th>Password</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+$("teamTable").addEventListener("click", async (e) => {
+  const b = e.target.closest("button[data-tact]");
+  if (!b) return;
+  const act = b.dataset.tact, n = Number(b.dataset.id);
+  if (act === "edit") { editingTeam = n; renderTeams(); return; }
+  if (act === "cancel") { editingTeam = null; renderTeams(); return; }
+  if (act === "save") {
+    const username = $("tUser").value.trim(), password = $("tPass").value;
+    if (!/^[A-Za-z0-9_]{3,}$/.test(username)) return toast("Username: letters, numbers or _ (min 3)");
+    if (password && password.length < 4) return toast("Password must be at least 4 characters");
+    if (teamCreds.some(t => t.username === username && t.team !== n)) return toast("That username is already used");
+    try {
+      await api("PATCH", "/api/teams/" + n, { username, password });
+      editingTeam = null; toast(teamName(n) + " updated");
+      await refresh();
+    } catch (err) { toast(err.message); }
+    renderTeams();
+  }
 });
 
 /* ===== Admin: registrations and exports ===== */

@@ -200,6 +200,36 @@ select{padding:10px 12px;border-radius:10px;background:var(--panel2);color:var(-
       </div>
     </section>
 
+    <!-- Admin: controls -->
+    <section id="vControls" class="hidden">
+      <h2>Controls</h2>
+      <p class="lead">Control registration and editing for all teams.</p>
+      <div id="controls">
+        <div class="card">
+          <div class="sec" style="margin-top:0"><span>Registration</span></div>
+          <p class="hint" id="regStatus"></p>
+          <div class="acts" style="margin-top:12px">
+            <button class="btn" type="button" data-ctl="stop" id="btnStop">Stop</button>
+            <button class="btn" type="button" data-ctl="continue" id="btnContinue">Continue</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="sec" style="margin-top:0"><span>Edit participants</span></div>
+          <p class="hint" id="editStatus"></p>
+          <div class="acts" style="margin-top:12px">
+            <button class="btn ghost" type="button" data-ctl="edit" id="btnEdit">Enable</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="sec" style="margin-top:0"><span>Reset</span></div>
+          <p class="hint">Removes all participants and groups from every team. This cannot be undone.</p>
+          <div class="acts" style="margin-top:12px">
+            <button class="btn ghost danger" type="button" data-ctl="reset" id="btnReset">Reset</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- Admin: teams -->
     <section id="vTeams" class="hidden">
       <h2>Teams</h2>

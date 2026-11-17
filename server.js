@@ -12,6 +12,7 @@ if (!MONGODB_URI || !JWT_SECRET || !ADMIN_PASSWORD) {
 }
 
 const MAX_IND = 4;
+const SETTINGS_ID = "app";
 const DEFAULT_COMPS = [
   { type: "individual", name: "Essay Writing", order: 1 },
   { type: "individual", name: "Poetry Writing", order: 2 },
@@ -67,6 +68,24 @@ async function nameTaken(name, type, exceptId) {
   return all.some(c => c._id !== exceptId && c.name.toLowerCase() === name.toLowerCase());
 }
 
+async function getSettings() {
+  const doc = await db.collection("settings").findOne({ _id: SETTINGS_ID });
+  return {
+    editingEnabled: doc?.editingEnabled ?? false,
+    registrationOpen: doc?.registrationOpen ?? true,
+  };
+}
+
+async function checkIndividual(body) {
+  const name = clean(body.name), cls = clean(body.cls);
+  if (!name || !cls) return { error: "Name and class are required." };
+  const comps = await pickComps(body.comps, "individual");
+  if (!comps) return { error: "Choose valid competitions." };
+  if (!comps.length) return { error: "Choose at least one competition." };
+  if (comps.length > MAX_IND) return { error: "Maximum 4 items per participant." };
+  return { value: { name, cls, comps } };
+}
+
 const app = express();
 app.use(express.json({ limit: "100kb" }));
 app.use((req, _res, next) => { req.body ??= {}; next(); });
@@ -92,33 +111,44 @@ app.post("/api/login", wrap(async (req, res) => {
 app.get("/api/state", requireAuth(), wrap(async (req, res) => {
   const isAdmin = req.user.role === "admin";
   const scope = isAdmin ? {} : { team: req.user.team };
-  const [comps, inds, grps, teams] = await Promise.all([
+  const [comps, inds, grps, teams, settings] = await Promise.all([
     db.collection("competitions").find({}).toArray(),
     db.collection("individuals").find(scope).sort({ createdAt: 1 }).toArray(),
     db.collection("groups").find(scope).sort({ createdAt: 1 }).toArray(),
     isAdmin ? db.collection("teams").find({}).sort({ team: 1 }).toArray() : [],
+    getSettings(),
   ]);
   res.json({
     comps: comps.map(strip),
     inds: inds.map(strip),
     grps: grps.map(strip),
     teams: teams.map(t => ({ team: t.team, username: t.username })),
+    settings,
   });
 }));
 
 /* ----- Team: registrations ----- */
 app.post("/api/individuals", requireAuth("team"), wrap(async (req, res) => {
-  const name = clean(req.body.name), cls = clean(req.body.cls);
-  if (!name || !cls) return bad(res, "Name and class are required.");
-  const comps = await pickComps(req.body.comps, "individual");
-  if (!comps) return bad(res, "Choose valid competitions.");
-  if (!comps.length) return bad(res, "Choose at least one competition.");
-  if (comps.length > MAX_IND) return bad(res, "Maximum 4 items per participant.");
-  await db.collection("individuals").insertOne({ _id: newId(), team: req.user.team, name, cls, comps, createdAt: Date.now() });
+  if (!(await getSettings()).registrationOpen) return bad(res, "Registration is stopped by the admin.", 403);
+  const r = await checkIndividual(req.body);
+  if (r.error) return bad(res, r.error);
+  await db.collection("individuals").insertOne({ _id: newId(), team: req.user.team, ...r.value, createdAt: Date.now() });
   res.status(201).json({ ok: true });
 }));
 
+app.patch("/api/individuals/:id", requireAuth("team"), wrap(async (req, res) => {
+  const col = db.collection("individuals");
+  const doc = await col.findOne({ _id: req.params.id, team: req.user.team });
+  if (!doc) return bad(res, "Participant not found.", 404);
+  if (!(await getSettings()).editingEnabled) return bad(res, "Editing is turned off by the admin.", 403);
+  const r = await checkIndividual(req.body);
+  if (r.error) return bad(res, r.error);
+  await col.updateOne({ _id: doc._id }, { $set: r.value });
+  res.json({ ok: true });
+}));
+
 app.post("/api/groups", requireAuth("team"), wrap(async (req, res) => {
+  if (!(await getSettings()).registrationOpen) return bad(res, "Registration is stopped by the admin.", 403);
   const leader = clean(req.body.leader), leaderCls = clean(req.body.leaderCls);
   const members = (Array.isArray(req.body.members) ? req.body.members : [])
     .map(m => ({ name: clean(m?.name), cls: clean(m?.cls) }))
@@ -132,6 +162,24 @@ app.post("/api/groups", requireAuth("team"), wrap(async (req, res) => {
   if (!comps.length) return bad(res, "Choose a group competition.");
   await db.collection("groups").insertOne({ _id: newId(), team: req.user.team, leader, leaderCls, members, comps, createdAt: Date.now() });
   res.status(201).json({ ok: true });
+}));
+
+/* ----- Admin: controls ----- */
+app.patch("/api/admin/settings", requireAuth("admin"), wrap(async (req, res) => {
+  const $set = {};
+  if (typeof req.body.editingEnabled === "boolean") $set.editingEnabled = req.body.editingEnabled;
+  if (typeof req.body.registrationOpen === "boolean") $set.registrationOpen = req.body.registrationOpen;
+  if (!Object.keys($set).length) return bad(res, "Nothing to change.");
+  await db.collection("settings").updateOne({ _id: SETTINGS_ID }, { $set }, { upsert: true });
+  res.json({ ok: true });
+}));
+
+app.post("/api/admin/reset", requireAuth("admin"), wrap(async (req, res) => {
+  const [i, g] = await Promise.all([
+    db.collection("individuals").deleteMany({}),
+    db.collection("groups").deleteMany({}),
+  ]);
+  res.json({ ok: true, removed: i.deletedCount + g.deletedCount });
 }));
 
 /* ----- Admin: competitions ----- */
@@ -196,6 +244,11 @@ async function seed() {
   if ((await comps.estimatedDocumentCount()) === 0) {
     await comps.insertMany(DEFAULT_COMPS.map(c => ({ _id: newId(), ...c, createdAt: Date.now() })));
   }
+  await db.collection("settings").updateOne(
+    { _id: SETTINGS_ID },
+    { $setOnInsert: { editingEnabled: false, registrationOpen: true } },
+    { upsert: true }
+  );
   const teams = db.collection("teams");
   await teams.createIndex({ username: 1 }, { unique: true });
   for (const t of DEFAULT_TEAMS) {

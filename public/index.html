@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Fine Arts Registration</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{--bg:#0f0f12;--panel:#18181f;--panel2:#202029;--line:#2e2e39;--text:#f2f2f5;--muted:#9c9cab;--accent:#f5c16c;--ink:#1a1206;--danger:#ff7070;--ok:#6fd49a;color-scheme:dark}
+@media (prefers-color-scheme: light){:root:not([data-theme="dark"]){--bg:#f5f5f8;--panel:#fff;--panel2:#f0f0f5;--line:#dcdce6;--text:#1c1c24;--muted:#66667a;--accent:#c98a1e;--ink:#fff;--danger:#c93c3c;--ok:#2e8f5b;color-scheme:light}}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--text);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+button,input{font:inherit}
+.hidden{display:none!important}
+.btn{background:var(--accent);color:var(--ink);border:0;border-radius:10px;padding:11px 16px;font-weight:600;cursor:pointer}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.ghost{background:transparent;color:var(--text);border:1px solid var(--line)}
+.btn.danger{color:var(--danger)}
+.btn.sm{padding:6px 10px;font-size:13px}
+.btn.block{width:100%}
+.link{background:none;border:0;color:var(--accent);cursor:pointer;padding:0;font-size:13px}
+label{display:block;font-size:13px;color:var(--muted);margin-bottom:14px}
+input[type=text],input[type=password]{display:block;width:100%;margin-top:6px;padding:11px 12px;background:var(--panel2);border:1px solid var(--line);border-radius:10px;color:var(--text)}
+input:focus{outline:2px solid var(--accent);outline-offset:0}
+input[type=checkbox]{accent-color:var(--accent);width:16px;height:16px;margin:0}
+.error{color:var(--danger);font-size:13px;min-height:18px;margin:4px 0 12px}
+.hint{color:var(--muted);font-size:13px}
+.empty{color:var(--muted);text-align:center;padding:24px;border:1px dashed var(--line);border-radius:14px}
+#login{min-height:100%;display:flex;align-items:center;justify-content:center;padding:24px}
+.login-card{width:100%;max-width:380px;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:32px 28px}
+.login-card h1{margin:0 0 4px;font-size:22px}
+.login-card .sub{margin:0 0 24px;color:var(--muted);font-size:14px}
+#app{display:grid;grid-template-columns:240px 1fr;min-height:100%}
+aside{background:var(--panel);border-right:1px solid var(--line);padding:24px 16px;display:flex;flex-direction:column;gap:6px}
+.brand{font-weight:700;padding:4px 10px 18px}
+.brand small{display:block;color:var(--muted);font-weight:400;font-size:12px}
+.nav{background:none;border:0;color:var(--muted);text-align:left;padding:10px 12px;border-radius:10px;cursor:pointer;font-size:15px}
+.nav:hover{background:var(--panel2);color:var(--text)}
+.nav.active{background:var(--panel2);color:var(--text);font-weight:600}
+.side-foot{margin-top:auto;padding-top:16px;border-top:1px solid var(--line)}
+.side-foot .who{font-size:13px;color:var(--muted);margin:0 10px 10px}
+main{padding:32px clamp(16px,4vw,48px);max-width:980px;width:100%}
+h2{margin:0 0 6px;font-size:24px}
+h2,.lead{text-align:left}
+.lead{color:var(--muted);margin:0 0 24px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px;margin-bottom:16px}
+.sec{font-size:16px;margin:28px 0 12px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+fieldset{border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin:6px 0 18px}
+legend{padding:0 6px;color:var(--muted);font-size:13px;display:flex;gap:10px;align-items:center}
+.count{background:var(--panel2);border-radius:999px;padding:2px 10px;font-size:12px;color:var(--text)}
+.checks{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px 14px;margin-top:8px}
+.checks label{display:flex;gap:10px;align-items:center;color:var(--text);margin:0;padding:8px 10px;border:1px solid var(--line);border-radius:10px;cursor:pointer}
+.checks label:has(input:checked){border-color:var(--accent);background:var(--panel2)}
+.types{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:22px}
+.type-opt{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;cursor:pointer;text-align:left;color:var(--text)}
+.type-opt strong{display:block;font-size:16px}
+.type-opt span{color:var(--muted);font-size:13px}
+.type-opt.on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
+.members{display:flex;flex-direction:column;gap:8px;margin-top:6px}
+.mrow{display:flex;gap:8px}
+.mrow input{margin:0;flex:1;min-width:0}
+.actions{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-top:6px}
+.msg{color:var(--ok);font-size:14px}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:8px}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px}
+.stat b{display:block;font-size:26px}
+.stat span{color:var(--muted);font-size:13px}
+.table-wrap{overflow-x:auto;background:var(--panel);border:1px solid var(--line);border-radius:14px;margin-bottom:8px}
+table{width:100%;border-collapse:collapse}
+th,td{text-align:left;padding:12px 14px;border-bottom:1px solid var(--line);vertical-align:top;font-size:14px}
+th{color:var(--muted);font-weight:500;background:var(--panel2)}
+tr:last-child td{border-bottom:0}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:2px 10px;font-size:12px}
+.tabs{display:flex;gap:8px;margin-bottom:16px}
+.tab{background:var(--panel);border:1px solid var(--line);color:var(--muted);border-radius:999px;padding:7px 16px;cursor:pointer}
+.tab.on{color:var(--text);border-color:var(--accent)}
+.item{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--line)}
+.item:last-child{border-bottom:0}
+.item input{margin:0;flex:1}
+.acts{display:flex;gap:8px;flex-wrap:wrap}
+.addrow{display:flex;gap:8px;margin-top:14px}
+.addrow input{margin:0;flex:1}
+select{padding:10px 12px;border-radius:10px;background:var(--panel2);color:var(--text);border:1px solid var(--line);min-width:220px}
+#toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:10px 16px;border-radius:10px;font-size:14px;opacity:0;pointer-events:none;transition:opacity .2s}
+#toast.show{opacity:1}
+@media (max-width:760px){
+  #app{grid-template-columns:1fr}
+  aside{flex-direction:row;flex-wrap:wrap;align-items:center;padding:12px;gap:6px}
+  .brand{flex:1 1 100%;padding:0 4px}
+  .side-foot{margin:0 0 0 auto;padding:0;border:0}
+  .side-foot .who{display:none}
+  .types,.row{grid-template-columns:1fr}
+  .stats{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+
+<section id="login">
+  <div class="login-card">
+    <h1 id="loginTitle">Fine Arts Registration</h1>
+    <p class="sub" id="loginSub">Sign in with your team username and password.</p>
+    <form id="teamForm" autocomplete="off">
+      <label>Username<input type="text" id="lUser"></label>
+      <label>Password<input type="password" id="lPass" required></label>
+      <div class="error" id="lErr"></div>
+      <button class="btn block" type="submit">Log in</button>
+    </form>
+  </div>
+</section>
+
+<div id="app" class="hidden">
+  <aside>
+    <div class="brand">Fine Arts Registration<small id="roleLabel"></small></div>
+    <div id="nav" style="display:flex;flex-direction:column;gap:6px"></div>
+    <div class="side-foot">
+      <div class="who" id="who"></div>
+      <button class="btn ghost sm" id="logout">Log out</button>
+    </div>
+  </aside>
+
+  <main>
+    <div class="hidden" id="dbNote" style="background:var(--panel2);border:1px solid var(--line);padding:12px 14px;border-radius:10px;margin-bottom:16px;color:var(--danger);font-size:14px"></div>
+
+    <!-- Team: registration -->
+    <section id="vRegistration">
+      <h2>Registration</h2>
+      <p class="lead">Choose how you want to register.</p>
+      <div class="types">
+        <button class="type-opt on" type="button" data-type="individual"><strong>Individual</strong><span>Register one participant for up to 4 items</span></button>
+        <button class="type-opt" type="button" data-type="group"><strong>Group</strong><span>Register a team with a leader and members</span></button>
+      </div>
+
+      <form id="indForm" class="card" autocomplete="off">
+        <div class="row">
+          <label>Participant name<input type="text" id="iName" required></label>
+          <label>Class<input type="text" id="iClass" placeholder="e.g. 8CA 2" required></label>
+        </div>
+        <fieldset>
+          <legend>Choose competitions <span class="count" id="iCount">0 / 4</span></legend>
+          <div class="checks" id="indChecks"></div>
+          <div class="hint" style="margin-top:10px">One participant can take part in a maximum of 4 items.</div>
+        </fieldset>
+        <div class="actions"><span class="msg" id="indMsg"></span><button class="btn" type="submit">Submit</button></div>
+      </form>
+
+      <form id="grpForm" class="card hidden" autocomplete="off">
+        <fieldset>
+          <legend>Team leader</legend>
+          <div class="row">
+            <label>Name<input type="text" id="gLeader" required></label>
+            <label>Class<input type="text" id="gLeaderCls" placeholder="e.g. 8CA 2" required></label>
+          </div>
+        </fieldset>
+        <fieldset>
+          <legend>Team members</legend>
+          <div class="members" id="memberList"></div>
+          <div style="margin-top:10px"><button type="button" class="btn ghost sm" id="addMember">+ Add member</button></div>
+        </fieldset>
+        <fieldset>
+          <legend>Choose group competitions</legend>
+          <div class="checks" id="grpChecks"></div>
+        </fieldset>
+        <div class="actions"><span class="msg" id="grpMsg"></span><button class="btn" type="submit">Submit</button></div>
+      </form>
+    </section>
+
+    <!-- Team: dashboard -->
+    <section id="vDashboard" class="hidden">
+      <h2>My Dashboard</h2>
+      <p class="lead" id="dashLead"></p>
+      <div class="stats">
+        <div class="stat"><b id="sInd">0</b><span>Individual participants</span></div>
+        <div class="stat"><b id="sGrp">0</b><span>Groups</span></div>
+        <div class="stat"><b id="sReg">0</b><span>Total registrations</span></div>
+      </div>
+      <h3 class="sec">Individual participants</h3>
+      <div id="dashInd"></div>
+      <h3 class="sec">Groups</h3>
+      <div id="dashGrp"></div>
+    </section>
+
+    <!-- Admin: competitions -->
+    <section id="vComps" class="hidden">
+      <h2>Competitions</h2>
+      <p class="lead">Add, edit or remove competitions. Changes appear for every team straight away.</p>
+      <div class="tabs">
+        <button class="tab" type="button" data-tab="individual">Individual</button>
+        <button class="tab" type="button" data-tab="group">Group</button>
+      </div>
+      <div class="card" style="padding:6px 16px 16px">
+        <div id="compList"></div>
+        <form id="addComp" class="addrow" autocomplete="off">
+          <input type="text" id="newComp" placeholder="New competition name" required>
+          <button class="btn" type="submit">Add</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- Admin: teams -->
+    <section id="vTeams" class="hidden">
+      <h2>Teams</h2>
+      <p class="lead">Each team signs in with this username and password. Edit them here; changes apply from the team's next login.</p>
+      <div class="table-wrap" id="teamTable"></div>
+    </section>
+
+    <!-- Admin: registrations -->
+    <section id="vAdminRegs" class="hidden">
+      <h2>Registrations</h2>
+      <p class="lead">Select to manage participant assignments for its competitions.</p>
+      <select id="teamSel" aria-label="Select team"></select>
+      <div id="adminOut" style="margin-top:22px"></div>
+    </section>
+  </main>
+</div>
+
+<div id="toast"></div>
+
+<script src="app.js"></script>
+</body>
+</html>

@@ -91,6 +91,13 @@ tr:last-child td{border-bottom:0}
   .side-foot .who{display:none}
   .types,.row{grid-template-columns:1fr}
   .stats{grid-template-columns:1fr}
+
+  /* Team member rows on phones: name on its own line (full width),
+     class and year side by side below it, ✕ button beside the name. */
+  .mrow{display:grid;grid-template-columns:1fr 1fr auto;gap:8px;align-items:center}
+  .mrow .mem{grid-column:1 / 3;grid-row:1;margin:0;min-width:0}
+  .mrow .btn{grid-column:3;grid-row:1}
+  .mrow select{margin:0;min-width:0;width:100%}
 }
 
 /* Brand watermark at the bottom of the login pages */

@@ -9,11 +9,8 @@ let editingTeam = null, pendingReset = false;
 
 const VIEWS = { comps: "vComps", classes: "vClasses", controls: "vControls", adminRegs: "vAdminRegs", teams: "vTeams" };
 
-// On-screen class label: "Bcom finance - 1st". Older records without a year show just the class.
+// Class column for exports and screens: "Bcom finance - 1st". Older records without a year show just the class.
 const classLabel = (cls, year) => year ? `${cls} - ${year}` : cls;
-
-// Export class cell: "3rd Year, Bcom Finance". Older records without a year show just the class.
-const exportClass = (cls, year) => year ? `${year} Year, ${cls}` : cls;
 
 function showView(v) {
   Object.entries(VIEWS).forEach(([k, id]) => $(id).classList.toggle("hidden", k !== v));
@@ -156,12 +153,11 @@ function renderAdminRegs() {
     ${grpListCards(G)}`;
 }
 
-// Export: only the Class cell changes, to "Year, Class" (e.g. "3rd Year, Bcom Finance").
-// Column layout and the Members format are unchanged.
+// Only the Class column carries the year. Column layout and the member format are unchanged.
 function indRows(t) {
   const rows = [["Name", "Class", "Team", "Competition"]];
   inds.filter(x => x.team === t).sort(byOrder).forEach(p =>
-    rows.push([p.name, exportClass(p.cls, p.year), teamName(t), p.comps.join(", ")]));
+    rows.push([p.name, classLabel(p.cls, p.year), teamName(t), p.comps.join(", ")]));
   return rows;
 }
 
@@ -170,7 +166,7 @@ function grpRows(t) {
   grps.filter(x => x.team === t).forEach(g =>
     rows.push([
       g.leader,
-      exportClass(g.leaderCls, g.leaderYear),
+      classLabel(g.leaderCls, g.leaderYear),
       g.members.map(m => `${m.name} (${m.cls})`).join("; "),
       teamName(t),
       g.comps.join(", ")
@@ -185,4 +181,187 @@ document.querySelectorAll(".nav").forEach(b => b.addEventListener("click", () =>
 $("logout").addEventListener("click", signOut);
 
 document.querySelectorAll(".tab").forEach(t => t.addEventListener("click", () => {
-  compTab = t.dataset.tab; editingId = null;
+  compTab = t.dataset.tab; editingId = null; pendingDel = null; renderComps();
+}));
+
+$("compList").addEventListener("click", async (e) => {
+  const b = e.target.closest("button[data-act]");
+  if (!b) return;
+  const id = b.dataset.id, act = b.dataset.act;
+  if (act === "edit") { editingId = id; pendingDel = null; renderComps(); $("editIn")?.focus(); return; }
+  if (act === "cancel") { editingId = null; renderComps(); return; }
+  try {
+    if (act === "save") {
+      const name = $("editIn").value.trim();
+      if (!name) return toast("Name cannot be empty");
+      if (dupe(name, id)) return toast("That competition already exists");
+      await api("PATCH", "/api/competitions/" + id, { name });
+      editingId = null;
+      toast("Competition updated");
+    }
+    if (act === "del") {
+      if (pendingDel !== id) { pendingDel = id; renderComps(); return; }
+      await api("DELETE", "/api/competitions/" + id);
+      pendingDel = null;
+      toast("Competition removed");
+    }
+    await refresh();
+  } catch (err) { toast(err.message); }
+  renderComps();
+});
+
+// Adds one competition per line. Blank lines, spaces and repeated names are ignored.
+// Names that already exist for this tab are skipped and left in the box so they can be fixed.
+$("addComp").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const lines = $("newComps").value.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+  if (!lines.length) return toast("Enter at least one competition name");
+
+  const seen = new Set();
+  const names = lines.filter(n => {
+    const key = n.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  const added = [], skipped = [];
+  for (const name of names) {
+    if (dupe(name, null)) { skipped.push(name); continue; }
+    try {
+      await api("POST", "/api/competitions", { name, type: compTab });
+      added.push(name);
+    } catch (err) {
+      skipped.push(name);
+    }
+  }
+
+  $("newComps").value = skipped.join("\n");
+  const dupCount = lines.length - names.length;
+  let msg = added.length
+    ? `Added ${added.length} competition${added.length === 1 ? "" : "s"}`
+    : "No competitions added";
+  if (skipped.length) msg += `. Skipped ${skipped.length} (already exists or failed)`;
+  if (dupCount) msg += `. Ignored ${dupCount} repeated name${dupCount === 1 ? "" : "s"}`;
+  toast(msg);
+
+  await refresh();
+});
+
+$("classList").addEventListener("click", async (e) => {
+  const b = e.target.closest("button[data-cact]");
+  if (!b) return;
+  const act = b.dataset.cact, id = b.dataset.id;
+  if (act === "edit") { editingClassId = id; renderClasses(); $("clsEditName")?.focus(); return; }
+  if (act === "cancel") { editingClassId = null; renderClasses(); return; }
+  if (act === "save") {
+    const name = $("clsEditName").value.trim();
+    const years = parseYears($("clsEditYears").value);
+    if (!name) return toast("Class name cannot be empty");
+    if (!years.length) return toast("Enter at least one year");
+    if (classTaken(name, id)) return toast("That class already exists");
+    try {
+      await api("PATCH", "/api/classes/" + id, { name, years });
+      editingClassId = null;
+      toast("Class updated");
+      await refresh();
+    } catch (err) { toast(err.message); }
+    renderClasses();
+  }
+});
+
+$("addClass").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const name = $("newClassName").value.trim();
+  const years = parseYears($("newClassYears").value);
+  if (!name) return;
+  if (!years.length) return toast("Enter at least one year");
+  if (classTaken(name, null)) return toast("That class already exists");
+  try {
+    await api("POST", "/api/classes", { name, years });
+    $("newClassName").value = "";
+    $("newClassYears").value = "";
+    toast("Class added");
+    await refresh();
+  } catch (err) { toast(err.message); }
+});
+
+$("controls").addEventListener("click", async (e) => {
+  const b = e.target.closest("button[data-ctl]");
+  if (!b) return;
+  const act = b.dataset.ctl;
+  if (act !== "reset") pendingReset = false;
+  try {
+    if (act === "stop") await api("PATCH", "/api/admin/settings", { registrationOpen: false });
+    if (act === "continue") await api("PATCH", "/api/admin/settings", { registrationOpen: true });
+    if (act === "edit") await api("PATCH", "/api/admin/settings", { editingEnabled: !settings.editingEnabled });
+    if (act === "reset") {
+      if (!pendingReset) { pendingReset = true; renderControls(); return; }
+      const r = await api("POST", "/api/admin/reset");
+      pendingReset = false;
+      toast(`Removed ${r.removed} registrations`);
+    }
+    await refresh();
+  } catch (err) { toast(err.message); }
+  renderControls();
+});
+
+$("teamTable").addEventListener("click", async (e) => {
+  const b = e.target.closest("button[data-tact]");
+  if (!b) return;
+  const act = b.dataset.tact, n = Number(b.dataset.id);
+  if (act === "edit") { editingTeam = n; renderTeams(); return; }
+  if (act === "cancel") { editingTeam = null; renderTeams(); return; }
+  if (act === "save") {
+    const username = $("tUser").value.trim(), password = $("tPass").value;
+    if (!/^[A-Za-z0-9_]{3,}$/.test(username)) return toast("Username: letters, numbers or _ (min 3)");
+    if (password && password.length < 4) return toast("Password must be at least 4 characters");
+    if (teamCreds.some(t => t.username === username && t.team !== n)) return toast("That username is already used");
+    try {
+      await api("PATCH", "/api/teams/" + n, { username, password });
+      editingTeam = null;
+      toast(teamName(n) + " updated");
+      await refresh();
+    } catch (err) { toast(err.message); }
+    renderTeams();
+  }
+});
+
+$("teamSel").addEventListener("change", () => { adminTeam = $("teamSel").value; renderAdminRegs(); });
+
+$("adminOut").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-dl]");
+  if (!b) return;
+  const t = Number(adminTeam);
+  const [kind, fmt] = b.dataset.dl.split("-");
+  const isInd = kind === "ind";
+  const rows = isInd ? indRows(t) : grpRows(t);
+  const base = `${teamName(t)} - ${isInd ? "Individual" : "Group"} Registrations`;
+  let blob, filename;
+  if (fmt === "xlsx") {
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), isInd ? "Individual" : "Group");
+    const bytes = XLSX.write(wb, { type: "array", bookType: "xlsx" });
+    blob = new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    filename = base + ".xlsx";
+  } else {
+    const csv = "\uFEFF" + rows.map(r => r.map(csvCell).join(",")).join("\r\n");
+    blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    filename = base + ".csv";
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  toast("File saved");
+});
+
+/* ----- Start ----- */
+if (session) {
+  showView("comps");
+  startPolling(refresh);
+}

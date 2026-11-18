@@ -183,17 +183,42 @@ $("compList").addEventListener("click", async (e) => {
   renderComps();
 });
 
+// Adds one competition per line. Blank lines, spaces and repeated names are ignored.
+// Names that already exist for this tab are skipped and left in the box so they can be fixed.
 $("addComp").addEventListener("submit", async (e) => {
   e.preventDefault();
-  const name = $("newComp").value.trim();
-  if (!name) return;
-  if (dupe(name, null)) return toast("That competition already exists");
-  try {
-    await api("POST", "/api/competitions", { name, type: compTab });
-    $("newComp").value = "";
-    toast("Competition added");
-    await refresh();
-  } catch (err) { toast(err.message); }
+  const lines = $("newComps").value.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+  if (!lines.length) return toast("Enter at least one competition name");
+
+  const seen = new Set();
+  const names = lines.filter(n => {
+    const key = n.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  const added = [], skipped = [];
+  for (const name of names) {
+    if (dupe(name, null)) { skipped.push(name); continue; }
+    try {
+      await api("POST", "/api/competitions", { name, type: compTab });
+      added.push(name);
+    } catch (err) {
+      skipped.push(name);
+    }
+  }
+
+  $("newComps").value = skipped.join("\n");
+  const dupCount = lines.length - names.length;
+  let msg = added.length
+    ? `Added ${added.length} competition${added.length === 1 ? "" : "s"}`
+    : "No competitions added";
+  if (skipped.length) msg += `. Skipped ${skipped.length} (already exists or failed)`;
+  if (dupCount) msg += `. Ignored ${dupCount} repeated name${dupCount === 1 ? "" : "s"}`;
+  toast(msg);
+
+  await refresh();
 });
 
 $("controls").addEventListener("click", async (e) => {

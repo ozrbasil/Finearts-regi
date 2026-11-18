@@ -92,3 +92,6 @@ tr:last-child td{border-bottom:0}
   .types,.row{grid-template-columns:1fr}
   .stats{grid-template-columns:1fr}
 }
+
+/* Brand watermark at the bottom of the login pages */
+.login-watermark{position:fixed;left:50%;bottom:14px;transform:translateX(-50%);width:min(240px,60vw);height:auto;opacity:.9;pointer-events:none;user-select:none;z-index:0}

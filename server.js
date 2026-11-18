@@ -68,6 +68,25 @@ async function nameTaken(name, type, exceptId) {
   return all.some(c => c._id !== exceptId && c.name.toLowerCase() === name.toLowerCase());
 }
 
+async function classNameTaken(name, exceptId) {
+  const all = await db.collection("classes").find({}).toArray();
+  return all.some(c => c._id !== exceptId && c.name.toLowerCase() === name.toLowerCase());
+}
+
+// Accepts an array or a comma-separated string. Returns unique, non-empty years.
+function cleanYears(v) {
+  const list = Array.isArray(v) ? v : String(v ?? "").split(",");
+  return [...new Set(list.map(clean).filter(Boolean))];
+}
+
+// Returns { cls, year } only if the class exists and the year is one of its years, otherwise null.
+async function pickClass(cls, year) {
+  const name = clean(cls), y = clean(year);
+  if (!name || !y) return null;
+  const doc = await db.collection("classes").findOne({ name, years: y });
+  return doc ? { cls: name, year: y } : null;
+}
+
 async function getSettings() {
   const doc = await db.collection("settings").findOne({ _id: SETTINGS_ID });
   return {
@@ -77,13 +96,15 @@ async function getSettings() {
 }
 
 async function checkIndividual(body) {
-  const name = clean(body.name), cls = clean(body.cls);
-  if (!name || !cls) return { error: "Name and class are required." };
+  const name = clean(body.name);
+  if (!name) return { error: "Name is required." };
+  const picked = await pickClass(body.cls, body.year);
+  if (!picked) return { error: "Choose a valid class and year." };
   const comps = await pickComps(body.comps, "individual");
   if (!comps) return { error: "Choose valid competitions." };
   if (!comps.length) return { error: "Choose at least one competition." };
   if (comps.length > MAX_IND) return { error: "Maximum 4 items per participant." };
-  return { value: { name, cls, comps } };
+  return { value: { name, cls: picked.cls, year: picked.year, comps } };
 }
 
 const app = express();
@@ -111,8 +132,9 @@ app.post("/api/login", wrap(async (req, res) => {
 app.get("/api/state", requireAuth(), wrap(async (req, res) => {
   const isAdmin = req.user.role === "admin";
   const scope = isAdmin ? {} : { team: req.user.team };
-  const [comps, inds, grps, teams, settings] = await Promise.all([
+  const [comps, classes, inds, grps, teams, settings] = await Promise.all([
     db.collection("competitions").find({}).toArray(),
+    db.collection("classes").find({}).sort({ order: 1 }).toArray(),
     db.collection("individuals").find(scope).sort({ createdAt: 1 }).toArray(),
     db.collection("groups").find(scope).sort({ createdAt: 1 }).toArray(),
     isAdmin ? db.collection("teams").find({}).sort({ team: 1 }).toArray() : [],
@@ -120,6 +142,7 @@ app.get("/api/state", requireAuth(), wrap(async (req, res) => {
   ]);
   res.json({
     comps: comps.map(strip),
+    classes: classes.map(strip),
     inds: inds.map(strip),
     grps: grps.map(strip),
     teams: teams.map(t => ({ team: t.team, username: t.username })),
@@ -149,14 +172,22 @@ app.patch("/api/individuals/:id", requireAuth("team"), wrap(async (req, res) => 
 
 app.post("/api/groups", requireAuth("team"), wrap(async (req, res) => {
   if (!(await getSettings()).registrationOpen) return bad(res, "Registration is stopped by the admin.", 403);
-  const leader = clean(req.body.leader), leaderCls = clean(req.body.leaderCls);
-  const members = (Array.isArray(req.body.members) ? req.body.members : [])
-    .map(m => ({ name: clean(m?.name), cls: clean(m?.cls) }))
-    .filter(m => m.name || m.cls);
-  if (!leader || !leaderCls) return bad(res, "Team leader name and class are required.");
-  if (!members.length) return bad(res, "Add at least one team member.");
-  if (members.length > 50) return bad(res, "Too many members.");
-  if (members.some(m => !m.name || !m.cls)) return bad(res, "Each member needs a name and class.");
+  const leader = clean(req.body.leader);
+  const leaderClass = await pickClass(req.body.leaderCls, req.body.leaderYear);
+  if (!leader || !leaderClass) return bad(res, "Team leader name, class and year are required.");
+
+  const rows = (Array.isArray(req.body.members) ? req.body.members : [])
+    .filter(m => clean(m?.name) || clean(m?.cls) || clean(m?.year));
+  if (!rows.length) return bad(res, "Add at least one team member.");
+  if (rows.length > 50) return bad(res, "Too many members.");
+  const members = [];
+  for (const m of rows) {
+    const name = clean(m?.name);
+    const pc = await pickClass(m?.cls, m?.year);
+    if (!name || !pc) return bad(res, "Each member needs a name, class and year.");
+    members.push({ name, cls: pc.cls, year: pc.year });
+  }
+
   const comps = await pickComps(req.body.comps, "group");
   if (!comps) return bad(res, "Choose valid group competitions.");
   if (!comps.length) return bad(res, "Choose a group competition.");
@@ -168,24 +199,39 @@ app.post("/api/groups", requireAuth("team"), wrap(async (req, res) => {
     return bad(res, `Your team is already registered for: ${already.join(", ")}.`, 409);
   }
 
-  await db.collection("groups").insertOne({ _id: newId(), team: req.user.team, leader, leaderCls, members, comps, createdAt: Date.now() });
+  await db.collection("groups").insertOne({
+    _id: newId(), team: req.user.team,
+    leader, leaderCls: leaderClass.cls, leaderYear: leaderClass.year,
+    members, comps, createdAt: Date.now(),
+  });
   res.status(201).json({ ok: true });
 }));
 
-// Editing a group changes the leader's name and class and each member's name and class.
+// Editing a group changes the leader's name, class and year, and each member's name, class and year.
 // Competitions and the number of members stay as they were registered.
 app.patch("/api/groups/:id", requireAuth("team"), wrap(async (req, res) => {
   const col = db.collection("groups");
   const doc = await col.findOne({ _id: req.params.id, team: req.user.team });
   if (!doc) return bad(res, "Group not found.", 404);
   if (!(await getSettings()).editingEnabled) return bad(res, "Editing is turned off by the admin.", 403);
-  const leader = clean(req.body.leader), leaderCls = clean(req.body.leaderCls);
+
+  const leader = clean(req.body.leader);
+  const leaderClass = await pickClass(req.body.leaderCls, req.body.leaderYear);
+  if (!leader || !leaderClass) return bad(res, "Team leader name, class and year are required.");
+
   const edits = Array.isArray(req.body.members) ? req.body.members : [];
-  if (!leader || !leaderCls) return bad(res, "Team leader name and class are required.");
   if (edits.length !== doc.members.length) return bad(res, "Member list does not match the registered group.");
-  const members = doc.members.map((_, i) => ({ name: clean(edits[i]?.name), cls: clean(edits[i]?.cls) }));
-  if (members.some(m => !m.name || !m.cls)) return bad(res, "Each member needs a name and class.");
-  await col.updateOne({ _id: doc._id }, { $set: { leader, leaderCls, members } });
+  const members = [];
+  for (let i = 0; i < doc.members.length; i++) {
+    const name = clean(edits[i]?.name);
+    const pc = await pickClass(edits[i]?.cls, edits[i]?.year);
+    if (!name || !pc) return bad(res, "Each member needs a name, class and year.");
+    members.push({ name, cls: pc.cls, year: pc.year });
+  }
+
+  await col.updateOne({ _id: doc._id }, {
+    $set: { leader, leaderCls: leaderClass.cls, leaderYear: leaderClass.year, members },
+  });
   res.json({ ok: true });
 }));
 
@@ -231,6 +277,29 @@ app.patch("/api/competitions/:id", requireAuth("admin"), wrap(async (req, res) =
 
 app.delete("/api/competitions/:id", requireAuth("admin"), wrap(async (req, res) => {
   await db.collection("competitions").deleteOne({ _id: req.params.id });
+  res.json({ ok: true });
+}));
+
+/* ----- Admin: classes and years ----- */
+app.post("/api/classes", requireAuth("admin"), wrap(async (req, res) => {
+  const name = clean(req.body.name), years = cleanYears(req.body.years);
+  if (!name) return bad(res, "Class name is required.");
+  if (!years.length) return bad(res, "Add at least one year.");
+  if (await classNameTaken(name, null)) return bad(res, "That class already exists.", 409);
+  const order = (await db.collection("classes").countDocuments({})) + 1;
+  await db.collection("classes").insertOne({ _id: newId(), name, years, order, createdAt: Date.now() });
+  res.status(201).json({ ok: true });
+}));
+
+app.patch("/api/classes/:id", requireAuth("admin"), wrap(async (req, res) => {
+  const col = db.collection("classes");
+  const doc = await col.findOne({ _id: req.params.id });
+  if (!doc) return bad(res, "Class not found.", 404);
+  const name = clean(req.body.name), years = cleanYears(req.body.years);
+  if (!name) return bad(res, "Class name cannot be empty.");
+  if (!years.length) return bad(res, "Add at least one year.");
+  if (await classNameTaken(name, doc._id)) return bad(res, "That class already exists.", 409);
+  await col.updateOne({ _id: doc._id }, { $set: { name, years } });
   res.json({ ok: true });
 }));
 

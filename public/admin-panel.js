@@ -187,21 +187,6 @@ $("addComp").addEventListener("submit", async (e) => {
   } catch (err) { toast(err.message); }
 });
 
-$("bulkComp").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const names = $("bulkText").value.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
-  if (!names.length) return;
-  try {
-    const r = await api("POST", "/api/competitions/bulk", { type: compTab, names });
-    $("bulkText").value = "";
-    const msg = `Added ${r.added}${r.skipped ? `, skipped ${r.skipped} already existing` : ""}.`;
-    $("bulkMsg").textContent = msg;
-    setTimeout(() => $("bulkMsg").textContent = "", 4000);
-    toast(`Added ${r.added} ${compTab} competition${r.added === 1 ? "" : "s"}`);
-    await refresh();
-  } catch (err) { toast(err.message); }
-});
-
 $("controls").addEventListener("click", async (e) => {
   const b = e.target.closest("button[data-ctl]");
   if (!b) return;

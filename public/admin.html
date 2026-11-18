@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Admin Login - Fine Arts Registration</title>
+<link rel="icon" type="image/png" href="favicon.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<section id="login">
+  <div class="login-card">
+    <h1 style="color:var(--accent)">Admin Login</h1>
+    <form id="adminForm" autocomplete="off" style="margin-top:28px">
+      <label>Password<input type="password" id="aPass" required></label>
+      <div class="error" id="aErr"></div>
+      <button class="btn block" type="submit">Log in</button>
+    </form>
+    <div class="links"><a href="index.html">User login</a></div>
+  </div>
+</section>
+
+<div id="toast"></div>
+
+<script src="common.js"></script>
+<script>
+  if (getSession()?.role === "admin") location.replace("admin-panel.html");
+
+  $("adminForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    $("aErr").textContent = "";
+    try {
+      // Admin login = empty username + admin password
+      const r = await api("POST", "/api/login", { username: "", password: $("aPass").value });
+      setSession({ token: r.token, role: "admin" });
+      location.replace("admin-panel.html");
+    } catch (err) {
+      $("aErr").textContent = "Incorrect password.";
+      $("aPass").value = "";
+    }
+  });
+</script>
+</body>
+</html>

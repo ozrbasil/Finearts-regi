@@ -4,7 +4,7 @@ let comps = [], classes = [], inds = [], grps = [], teamCreds = [];
 let settings = { editingEnabled: false, registrationOpen: true };
 let lastState = "";
 let adminTeam = "", compTab = "individual", editingId = null, pendingDel = null;
-let editingClassId = null;
+let editingClassId = null, pendingClassDel = null;
 let editingTeam = null, pendingReset = false;
 
 const VIEWS = { comps: "vComps", classes: "vClasses", controls: "vControls", adminRegs: "vAdminRegs", teams: "vTeams" };
@@ -81,7 +81,10 @@ function renderClasses() {
       <div class="acts"><button class="btn sm" type="button" data-cact="save" data-id="${c.id}">Save</button>
       <button class="btn ghost sm" type="button" data-cact="cancel">Cancel</button></div></div>`;
     return `<div class="item"><span><strong>${esc(c.name)}</strong> <span class="hint">· ${esc(c.years.join(", "))}</span></span>
-      <div class="acts"><button class="btn ghost sm" type="button" data-cact="edit" data-id="${c.id}">Edit</button></div></div>`;
+      <div class="acts">
+        <button class="btn ghost sm" type="button" data-cact="edit" data-id="${c.id}">Edit</button>
+        <button class="btn ghost sm danger" type="button" data-cact="del" data-id="${c.id}">${pendingClassDel === c.id ? "Confirm delete" : "Delete"}</button>
+      </div></div>`;
   }).join("") : `<div class="empty" style="border:0">No classes yet. Add one below.</div>`;
 }
 
@@ -256,8 +259,19 @@ $("classList").addEventListener("click", async (e) => {
   const b = e.target.closest("button[data-cact]");
   if (!b) return;
   const act = b.dataset.cact, id = b.dataset.id;
-  if (act === "edit") { editingClassId = id; renderClasses(); $("clsEditName")?.focus(); return; }
+  if (act === "edit") { editingClassId = id; pendingClassDel = null; renderClasses(); $("clsEditName")?.focus(); return; }
   if (act === "cancel") { editingClassId = null; renderClasses(); return; }
+  if (act === "del") {
+    if (pendingClassDel !== id) { pendingClassDel = id; renderClasses(); return; }
+    try {
+      await api("DELETE", "/api/classes/" + id);
+      pendingClassDel = null;
+      toast("Class deleted");
+      await refresh();
+    } catch (err) { toast(err.message); }
+    renderClasses();
+    return;
+  }
   if (act === "save") {
     const name = $("clsEditName").value.trim();
     const years = parseYears($("clsEditYears").value);

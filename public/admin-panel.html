@@ -36,9 +36,9 @@
       </div>
       <div class="card" style="padding:6px 16px 16px">
         <div id="compList"></div>
-        <form id="addComp" class="addrow" autocomplete="off">
-          <input type="text" id="newComp" placeholder="New competition name" required>
-          <button class="btn" type="submit">Add</button>
+        <form id="addComp" class="addrow" autocomplete="off" style="flex-direction:column;align-items:stretch">
+          <textarea id="newComps" rows="4" placeholder="New competition names, one per line" required></textarea>
+          <button class="btn" type="submit" style="align-self:flex-end;margin-top:8px">Add</button>
         </form>
       </div>
     </section>

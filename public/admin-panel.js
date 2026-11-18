@@ -9,8 +9,11 @@ let editingTeam = null, pendingReset = false;
 
 const VIEWS = { comps: "vComps", classes: "vClasses", controls: "vControls", adminRegs: "vAdminRegs", teams: "vTeams" };
 
-// Class column for exports and screens: "Bcom finance - 1st". Older records without a year show just the class.
+// On-screen class label: "Bcom finance - 1st". Older records without a year show just the class.
 const classLabel = (cls, year) => year ? `${cls} - ${year}` : cls;
+
+// Export class cell: "3rd Year, Bcom Finance". Older records without a year show just the class.
+const exportClass = (cls, year) => year ? `${year} Year, ${cls}` : cls;
 
 function showView(v) {
   Object.entries(VIEWS).forEach(([k, id]) => $(id).classList.toggle("hidden", k !== v));
@@ -153,11 +156,12 @@ function renderAdminRegs() {
     ${grpListCards(G)}`;
 }
 
-// Only the Class column carries the year. Column layout and the member format are unchanged.
+// Export: only the Class cell changes, to "Year, Class" (e.g. "3rd Year, Bcom Finance").
+// Column layout and the Members format are unchanged.
 function indRows(t) {
   const rows = [["Name", "Class", "Team", "Competition"]];
   inds.filter(x => x.team === t).sort(byOrder).forEach(p =>
-    rows.push([p.name, classLabel(p.cls, p.year), teamName(t), p.comps.join(", ")]));
+    rows.push([p.name, exportClass(p.cls, p.year), teamName(t), p.comps.join(", ")]));
   return rows;
 }
 
@@ -166,7 +170,7 @@ function grpRows(t) {
   grps.filter(x => x.team === t).forEach(g =>
     rows.push([
       g.leader,
-      classLabel(g.leaderCls, g.leaderYear),
+      exportClass(g.leaderCls, g.leaderYear),
       g.members.map(m => `${m.name} (${m.cls})`).join("; "),
       teamName(t),
       g.comps.join(", ")

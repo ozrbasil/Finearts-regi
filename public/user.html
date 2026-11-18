@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>My Registration - Fine Arts Registration</title>
+<link rel="icon" type="image/png" href="favicon.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="app">
+  <aside>
+    <div class="brand">Fine Arts Registration<small id="roleLabel"></small></div>
+    <button class="nav active" type="button" data-view="registration">Registration</button>
+    <button class="nav" type="button" data-view="dashboard">My Dashboard</button>
+    <div class="side-foot">
+      <div class="who" id="who"></div>
+      <button class="btn ghost sm" id="logout" type="button">Log out</button>
+    </div>
+  </aside>
+
+  <main>
+    <div class="hidden note" id="dbNote"></div>
+
+    <!-- Registration -->
+    <section id="vRegistration">
+      <h2>Registration</h2>
+      <p class="lead">Choose how you want to register.</p>
+      <div id="regClosed" class="empty hidden" style="margin-bottom:16px">Registration is stopped by the admin. You cannot add new participants right now.</div>
+      <div class="types">
+        <button class="type-opt on" type="button" data-type="individual"><strong>Individual</strong><span>Register one participant for up to 4 items</span></button>
+        <button class="type-opt" type="button" data-type="group"><strong>Group</strong><span>Register a team with a leader and members</span></button>
+      </div>
+
+      <form id="indForm" class="card" autocomplete="off">
+        <div class="row">
+          <label>Participant name<input type="text" id="iName" required></label>
+          <label>Class<input type="text" id="iClass" placeholder="e.g. 8CA 2" required></label>
+        </div>
+        <fieldset>
+          <legend>Choose competitions <span class="count" id="iCount">0 / 4</span></legend>
+          <div class="checks" id="indChecks"></div>
+          <div class="hint" style="margin-top:10px">One participant can take part in a maximum of 4 items.</div>
+        </fieldset>
+        <div class="actions"><span class="msg" id="indMsg"></span><button class="btn" type="submit">Submit</button></div>
+      </form>
+
+      <form id="grpForm" class="card hidden" autocomplete="off">
+        <fieldset>
+          <legend>Team leader</legend>
+          <div class="row">
+            <label>Name<input type="text" id="gLeader" required></label>
+            <label>Class<input type="text" id="gLeaderCls" placeholder="e.g. 8CA 2" required></label>
+          </div>
+        </fieldset>
+        <fieldset>
+          <legend>Team members</legend>
+          <div class="members" id="memberList"></div>
+          <div style="margin-top:10px"><button type="button" class="btn ghost sm" id="addMember">+ Add member</button></div>
+        </fieldset>
+        <fieldset>
+          <legend>Choose group competitions</legend>
+          <div class="checks" id="grpChecks"></div>
+        </fieldset>
+        <div class="actions"><span class="msg" id="grpMsg"></span><button class="btn" type="submit">Submit</button></div>
+      </form>
+    </section>
+
+    <!-- Dashboard -->
+    <section id="vDashboard" class="hidden">
+      <h2>My Dashboard</h2>
+      <p class="lead" id="dashLead"></p>
+      <div class="stats">
+        <div class="stat"><b id="sInd">0</b><span>Individual participants</span></div>
+        <div class="stat"><b id="sGrp">0</b><span>Groups</span></div>
+        <div class="stat"><b id="sReg">0</b><span>Total registrations</span></div>
+      </div>
+      <h3 class="sec">Individual participants</h3>
+      <div id="dashInd"></div>
+      <h3 class="sec">Groups</h3>
+      <div id="dashGrp"></div>
+    </section>
+  </main>
+</div>
+
+<div id="toast"></div>
+
+<script src="common.js"></script>
+<script src="user.js"></script>
+</body>
+</html>

@@ -172,20 +172,20 @@ app.post("/api/groups", requireAuth("team"), wrap(async (req, res) => {
   res.status(201).json({ ok: true });
 }));
 
-// Editing a group changes only the team leader's name and the member names.
-// Classes, competitions and the number of members stay as they were registered.
+// Editing a group changes the leader's name and class and each member's name and class.
+// Competitions and the number of members stay as they were registered.
 app.patch("/api/groups/:id", requireAuth("team"), wrap(async (req, res) => {
   const col = db.collection("groups");
   const doc = await col.findOne({ _id: req.params.id, team: req.user.team });
   if (!doc) return bad(res, "Group not found.", 404);
   if (!(await getSettings()).editingEnabled) return bad(res, "Editing is turned off by the admin.", 403);
-  const leader = clean(req.body.leader);
-  const memberNames = Array.isArray(req.body.memberNames) ? req.body.memberNames.map(clean) : [];
-  if (!leader) return bad(res, "Team leader name is required.");
-  if (memberNames.length !== doc.members.length) return bad(res, "Member list does not match the registered group.");
-  if (memberNames.some(n => !n)) return bad(res, "Each member needs a name.");
-  const members = doc.members.map((m, i) => ({ ...m, name: memberNames[i] }));
-  await col.updateOne({ _id: doc._id }, { $set: { leader, members } });
+  const leader = clean(req.body.leader), leaderCls = clean(req.body.leaderCls);
+  const edits = Array.isArray(req.body.members) ? req.body.members : [];
+  if (!leader || !leaderCls) return bad(res, "Team leader name and class are required.");
+  if (edits.length !== doc.members.length) return bad(res, "Member list does not match the registered group.");
+  const members = doc.members.map((_, i) => ({ name: clean(edits[i]?.name), cls: clean(edits[i]?.cls) }));
+  if (members.some(m => !m.name || !m.cls)) return bad(res, "Each member needs a name and class.");
+  await col.updateOne({ _id: doc._id }, { $set: { leader, leaderCls, members } });
   res.json({ ok: true });
 }));
 

@@ -12,7 +12,6 @@ if (!MONGODB_URI || !JWT_SECRET || !ADMIN_PASSWORD) {
 }
 
 const MAX_IND = 4;
-const MAX_BULK = 200;
 const SETTINGS_ID = "app";
 const DEFAULT_COMPS = [
   { type: "individual", name: "Essay Writing", order: 1 },
@@ -192,31 +191,6 @@ app.post("/api/competitions", requireAuth("admin"), wrap(async (req, res) => {
   const order = (await db.collection("competitions").countDocuments({ type })) + 1;
   await db.collection("competitions").insertOne({ _id: newId(), name, type, order, createdAt: Date.now() });
   res.status(201).json({ ok: true });
-}));
-
-// Adds many competitions of one type at once. Names that already exist (ignoring case) are skipped.
-app.post("/api/competitions/bulk", requireAuth("admin"), wrap(async (req, res) => {
-  const type = req.body.type === "group" ? "group" : "individual";
-  const names = [];
-  const seen = new Set();
-  for (const raw of (Array.isArray(req.body.names) ? req.body.names : [])) {
-    const name = clean(raw);
-    const key = name.toLowerCase();
-    if (name && !seen.has(key)) { seen.add(key); names.push(name); }
-  }
-  if (!names.length) return bad(res, "Enter at least one competition name.");
-  if (names.length > MAX_BULK) return bad(res, `Add at most ${MAX_BULK} competitions at a time.`);
-
-  const col = db.collection("competitions");
-  const existing = await col.find({ type }).toArray();
-  const existingKeys = new Set(existing.map(c => c.name.toLowerCase()));
-  const toAdd = names.filter(n => !existingKeys.has(n.toLowerCase()));
-
-  if (toAdd.length) {
-    let order = existing.length;
-    await col.insertMany(toAdd.map(name => ({ _id: newId(), name, type, order: ++order, createdAt: Date.now() })));
-  }
-  res.status(201).json({ added: toAdd.length, skipped: names.length - toAdd.length });
 }));
 
 app.patch("/api/competitions/:id", requireAuth("admin"), wrap(async (req, res) => {

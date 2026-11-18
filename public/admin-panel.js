@@ -5,6 +5,7 @@ let settings = { editingEnabled: false, registrationOpen: true };
 let lastState = "";
 let adminTeam = "", compTab = "individual", editingId = null, pendingDel = null;
 let editingClassId = null;
+let pendingClassDel = null, pendingYearDel = null;
 let editingTeam = null, pendingReset = false;
 
 const VIEWS = { comps: "vComps", classes: "vClasses", controls: "vControls", adminRegs: "vAdminRegs", teams: "vTeams" };
@@ -80,8 +81,20 @@ function renderClasses() {
       <input type="text" id="clsEditYears" value="${esc(c.years.join(", "))}" placeholder="Years e.g. 1st, 2nd, 3rd">
       <div class="acts"><button class="btn sm" type="button" data-cact="save" data-id="${c.id}">Save</button>
       <button class="btn ghost sm" type="button" data-cact="cancel">Cancel</button></div></div>`;
-    return `<div class="item"><span><strong>${esc(c.name)}</strong> <span class="hint">· ${esc(c.years.join(", "))}</span></span>
-      <div class="acts"><button class="btn ghost sm" type="button" data-cact="edit" data-id="${c.id}">Edit</button></div></div>`;
+
+    const yearChips = c.years.map(y => {
+      const confirming = pendingYearDel && pendingYearDel.id === c.id && pendingYearDel.year === y;
+      const removeBtn = c.years.length > 1
+        ? ` <button class="btn ghost sm danger" type="button" style="padding:0 6px;font-size:11px;border:0" data-cact="delyear" data-id="${c.id}" data-year="${esc(y)}">${confirming ? "Confirm" : "Remove"}</button>`
+        : "";
+      return `<span class="chip">${esc(y)}${removeBtn}</span>`;
+    }).join("");
+
+    return `<div class="item" style="flex-wrap:wrap;gap:8px">
+      <span style="flex:1;min-width:160px"><strong>${esc(c.name)}</strong></span>
+      <div class="chips">${yearChips}</div>
+      <div class="acts"><button class="btn ghost sm" type="button" data-cact="edit" data-id="${c.id}">Edit</button>
+      <button class="btn ghost sm danger" type="button" data-cact="delcls" data-id="${c.id}">${pendingClassDel === c.id ? "Confirm remove" : "Remove"}</button></div></div>`;
   }).join("") : `<div class="empty" style="border:0">No classes yet. Add one below.</div>`;
 }
 
@@ -255,9 +268,16 @@ $("addComp").addEventListener("submit", async (e) => {
 $("classList").addEventListener("click", async (e) => {
   const b = e.target.closest("button[data-cact]");
   if (!b) return;
-  const act = b.dataset.cact, id = b.dataset.id;
+  const act = b.dataset.cact, id = b.dataset.id, year = b.dataset.year;
+  const cls = classes.find(c => c.id === id);
+
+  // Any action other than the matching confirm cancels a pending remove.
+  if (act !== "delcls") pendingClassDel = null;
+  if (act !== "delyear") pendingYearDel = null;
+
   if (act === "edit") { editingClassId = id; renderClasses(); $("clsEditName")?.focus(); return; }
   if (act === "cancel") { editingClassId = null; renderClasses(); return; }
+
   if (act === "save") {
     const name = $("clsEditName").value.trim();
     const years = parseYears($("clsEditYears").value);
@@ -268,6 +288,37 @@ $("classList").addEventListener("click", async (e) => {
       await api("PATCH", "/api/classes/" + id, { name, years });
       editingClassId = null;
       toast("Class updated");
+      await refresh();
+    } catch (err) { toast(err.message); }
+    renderClasses();
+    return;
+  }
+
+  // Remove a whole class (two taps: Remove, then Confirm remove).
+  if (act === "delcls") {
+    if (pendingClassDel !== id) { pendingClassDel = id; renderClasses(); return; }
+    try {
+      await api("DELETE", "/api/classes/" + id);
+      pendingClassDel = null;
+      if (editingClassId === id) editingClassId = null;
+      toast(`Removed ${cls ? cls.name : "class"}`);
+      await refresh();
+    } catch (err) { toast(err.message); }
+    renderClasses();
+    return;
+  }
+
+  // Remove one year from a class (two taps: Remove, then Confirm).
+  if (act === "delyear") {
+    const confirming = pendingYearDel && pendingYearDel.id === id && pendingYearDel.year === year;
+    if (!confirming) { pendingYearDel = { id, year }; renderClasses(); return; }
+    if (!cls) return;
+    const years = cls.years.filter(y => y !== year);
+    if (!years.length) return toast("A class needs at least one year. Remove the class instead.");
+    try {
+      await api("PATCH", "/api/classes/" + id, { name: cls.name, years });
+      pendingYearDel = null;
+      toast(`Removed year ${year}`);
       await refresh();
     } catch (err) { toast(err.message); }
     renderClasses();

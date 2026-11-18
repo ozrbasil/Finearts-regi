@@ -1,9 +1,11 @@
 /* User panel: registration and My Dashboard */
 const session = requireRole("team");
 const MAX_IND = 4;
-let comps = [], inds = [], grps = [];
+let comps = [], classes = [], inds = [], grps = [];
 let settings = { editingEnabled: false, registrationOpen: true };
 let lastState = "", formKey = "", editingIndId = null, editingGrpId = null;
+
+const classLabel = (cls, year) => year ? `${cls} - ${year}` : cls;
 
 function showView(v) {
   $("vRegistration").classList.toggle("hidden", v !== "registration");
@@ -15,6 +17,7 @@ function showView(v) {
 function renderAll() {
   renderRegState();
   renderTeamForms();
+  refreshClassFields();
   applyGroupTaken();
   renderDash();
 }
@@ -27,6 +30,7 @@ async function refresh() {
     if (snap === lastState) return;
     lastState = snap;
     comps = s.comps.sort(byOrder);
+    classes = (s.classes || []).sort(byOrder);
     inds = s.inds;
     grps = s.grps;
     settings = s.settings;
@@ -35,6 +39,39 @@ async function refresh() {
     showNote("Connection problem: " + err.message);
   }
 }
+
+/* ----- Class and year dropdowns: only the classes the admin has added ----- */
+function clsOptions(sel) {
+  return `<option value="">Choose class</option>` +
+    classes.map(c => `<option value="${esc(c.name)}"${c.name === sel ? " selected" : ""}>${esc(c.name)}</option>`).join("");
+}
+
+function yearOptions(clsName, sel) {
+  const c = classes.find(x => x.name === clsName);
+  return `<option value="">Choose year</option>` +
+    (c ? c.years.map(y => `<option value="${esc(y)}"${y === sel ? " selected" : ""}>${esc(y)}</option>`).join("") : "");
+}
+
+// Rebuilds every class and year dropdown from the current list, keeping what is already picked.
+function refreshClassFields() {
+  document.querySelectorAll("select.clsSel").forEach(s => {
+    const v = s.value;
+    s.innerHTML = clsOptions(v);
+    s.value = v;
+  });
+  document.querySelectorAll("select.yrSel").forEach(s => {
+    const c = s.closest(".pair").querySelector("select.clsSel").value;
+    const v = s.value;
+    s.innerHTML = yearOptions(c, v);
+    s.value = v;
+  });
+}
+
+// When a class is picked, its years appear in the year dropdown next to it.
+document.addEventListener("change", (e) => {
+  if (!e.target.matches("select.clsSel")) return;
+  e.target.closest(".pair").querySelector("select.yrSel").innerHTML = yearOptions(e.target.value, "");
+});
 
 function renderRegState() {
   const open = settings.registrationOpen;
@@ -77,7 +114,10 @@ function addMemberRow() {
   const row = document.createElement("div");
   row.className = "mrow";
   row.innerHTML = `<input type="text" class="mem" placeholder="Member name">
-    <input type="text" class="memCls" placeholder="Class e.g. 8CA 2">
+    <span class="pair" style="display:contents">
+      <select class="memCls clsSel" aria-label="Member class">${clsOptions("")}</select>
+      <select class="memYr yrSel" aria-label="Member year">${yearOptions("", "")}</select>
+    </span>
     <button type="button" class="btn ghost sm" aria-label="Remove member">✕</button>`;
   row.querySelector("button").addEventListener("click", () => {
     if ($("memberList").children.length > 1) row.remove();
@@ -88,7 +128,7 @@ function addMemberRow() {
 function indTable(I, canEdit) {
   if (!I.length) return `<div class="empty">No individual participants yet.</div>`;
   return `<div class="table-wrap"><table><thead><tr><th>#</th><th>Name</th><th>Class</th><th>Competitions</th>${canEdit ? "<th></th>" : ""}</tr></thead><tbody>
-    ${I.map((p, i) => canEdit && editingIndId === p.id ? editRow(p, i) : `<tr><td>${i + 1}</td><td>${esc(p.name)}</td><td>${esc(p.cls)}</td>
+    ${I.map((p, i) => canEdit && editingIndId === p.id ? editRow(p, i) : `<tr><td>${i + 1}</td><td>${esc(p.name)}</td><td>${esc(classLabel(p.cls, p.year))}</td>
     <td><div class="chips">${p.comps.map(c => `<span class="chip">${esc(c)}</span>`).join("")}</div></td>
     ${canEdit ? `<td><button class="btn ghost sm" type="button" data-ind-act="edit" data-id="${p.id}">Edit</button></td>` : ""}</tr>`).join("")}
     </tbody></table></div>`;
@@ -99,7 +139,9 @@ function editRow(p, i) {
   return `<tr>
     <td>${i + 1}</td>
     <td><input type="text" id="eName" value="${esc(p.name)}"></td>
-    <td><input type="text" id="eCls" value="${esc(p.cls)}"></td>
+    <td><span class="pair" style="display:flex;gap:6px">
+      <select id="eCls" class="clsSel">${clsOptions(p.cls)}</select>
+      <select id="eYr" class="yrSel">${yearOptions(p.cls, p.year)}</select></span></td>
     <td><div class="checks">${indList.map(n => `<label><input type="checkbox" name="eComp" value="${esc(n)}" ${p.comps.includes(n) ? "checked" : ""}><span>${esc(n)}</span></label>`).join("")}</div></td>
     <td><div class="acts"><button class="btn sm" type="button" data-ind-act="save" data-id="${p.id}">Save</button>
     <button class="btn ghost sm" type="button" data-ind-act="cancel">Cancel</button></div></td></tr>`;
@@ -108,21 +150,25 @@ function editRow(p, i) {
 function grpCards(G, canEdit) {
   if (!G.length) return `<div class="empty">No groups registered yet.</div>`;
   return `<div class="table-wrap"><table><thead><tr><th>Team Leader</th><th>Class</th><th>Members</th><th>Competitions</th>${canEdit ? "<th></th>" : ""}</tr></thead><tbody>
-    ${G.map(g => canEdit && editingGrpId === g.id ? grpEditRow(g) : `<tr><td>${esc(g.leader)}</td><td>${esc(g.leaderCls)}</td>
-    <td>${g.members.map(m => `<div>${esc(m.name)} <span class="hint">· ${esc(m.cls)}</span></div>`).join("")}</td>
+    ${G.map(g => canEdit && editingGrpId === g.id ? grpEditRow(g) : `<tr><td>${esc(g.leader)}</td><td>${esc(classLabel(g.leaderCls, g.leaderYear))}</td>
+    <td>${g.members.map(m => `<div>${esc(m.name)} <span class="hint">· ${esc(classLabel(m.cls, m.year))}</span></div>`).join("")}</td>
     <td><div class="chips">${g.comps.map(c => `<span class="chip">${esc(c)}</span>`).join("")}</div></td>
     ${canEdit ? `<td><button class="btn ghost sm" type="button" data-grp-act="edit" data-id="${g.id}">Edit</button></td>` : ""}</tr>`).join("")}
     </tbody></table></div>`;
 }
 
-// Names and classes can change. Competitions and the number of members are shown as plain text.
+// Names, classes and years can change. Competitions and the number of members are shown as plain text.
 function grpEditRow(g) {
   return `<tr>
     <td><input type="text" id="geLeader" value="${esc(g.leader)}"></td>
-    <td><input type="text" id="geLeaderCls" value="${esc(g.leaderCls)}"></td>
-    <td>${g.members.map(m => `<div class="gemRow" style="display:flex;gap:6px;margin-bottom:6px">
+    <td><span class="pair" style="display:flex;gap:6px">
+      <select id="geLeaderCls" class="clsSel">${clsOptions(g.leaderCls)}</select>
+      <select id="geLeaderYr" class="yrSel">${yearOptions(g.leaderCls, g.leaderYear)}</select></span></td>
+    <td>${g.members.map(m => `<div class="gemRow" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
       <input type="text" class="geMem" value="${esc(m.name)}">
-      <input type="text" class="geMemCls" value="${esc(m.cls)}"></div>`).join("")}</td>
+      <span class="pair" style="display:flex;gap:6px">
+        <select class="geMemCls clsSel">${clsOptions(m.cls)}</select>
+        <select class="geMemYr yrSel">${yearOptions(m.cls, m.year)}</select></span></div>`).join("")}</td>
     <td><div class="chips">${g.comps.map(c => `<span class="chip">${esc(c)}</span>`).join("")}</div></td>
     <td><div class="acts"><button class="btn sm" type="button" data-grp-act="save" data-id="${g.id}">Save</button>
     <button class="btn ghost sm" type="button" data-grp-act="cancel">Cancel</button></div></td></tr>`;
@@ -164,13 +210,15 @@ $("indChecks").addEventListener("change", (e) => {
 $("indForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   if (!settings.registrationOpen) return toast("Registration is stopped by the admin");
-  const name = $("iName").value.trim(), cls = $("iClass").value.trim();
+  const name = $("iName").value.trim(), cls = $("iClass").value, year = $("iYr").value;
   const chosen = [...document.querySelectorAll('input[name="ind"]:checked')].map(c => c.value);
-  if (!name || !cls) return;
+  if (!name) return;
+  if (!cls || !year) return toast("Choose a class and year");
   if (!chosen.length) return toast("Choose at least one competition");
   try {
-    await api("POST", "/api/individuals", { name, cls, comps: chosen });
+    await api("POST", "/api/individuals", { name, cls, year, comps: chosen });
     $("indForm").reset();
+    refreshClassFields();
     updateIndCount();
     $("indMsg").textContent = "Participant added.";
     setTimeout(() => $("indMsg").textContent = "", 2500);
@@ -183,21 +231,27 @@ $("addMember").addEventListener("click", addMemberRow);
 $("grpForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   if (!settings.registrationOpen) return toast("Registration is stopped by the admin");
-  const leader = $("gLeader").value.trim(), leaderCls = $("gLeaderCls").value.trim();
+  const leader = $("gLeader").value.trim(), leaderCls = $("gLeaderCls").value, leaderYear = $("gLeaderYr").value;
   const members = [...document.querySelectorAll(".mrow")]
-    .map(r => ({ name: r.querySelector(".mem").value.trim(), cls: r.querySelector(".memCls").value.trim() }))
-    .filter(m => m.name || m.cls);
+    .map(r => ({
+      name: r.querySelector(".mem").value.trim(),
+      cls: r.querySelector(".memCls").value,
+      year: r.querySelector(".memYr").value,
+    }))
+    .filter(m => m.name || m.cls || m.year);
   const chosen = [...document.querySelectorAll('input[name="grp"]:checked')].map(c => c.value);
-  if (!leader || !leaderCls) return;
+  if (!leader) return;
+  if (!leaderCls || !leaderYear) return toast("Choose the leader's class and year");
   if (!members.length) return toast("Add at least one team member");
-  if (members.some(m => !m.name || !m.cls)) return toast("Each member needs a name and class");
+  if (members.some(m => !m.name || !m.cls || !m.year)) return toast("Each member needs a name, class and year");
   if (!chosen.length) return toast("Choose a group competition");
   try {
-    await api("POST", "/api/groups", { leader, leaderCls, members, comps: chosen });
+    await api("POST", "/api/groups", { leader, leaderCls, leaderYear, members, comps: chosen });
     $("grpForm").reset();
     $("memberList").innerHTML = "";
     addMemberRow();
     addMemberRow();
+    refreshClassFields();
     $("grpMsg").textContent = "Group added.";
     setTimeout(() => $("grpMsg").textContent = "", 2500);
     refresh();
@@ -211,13 +265,14 @@ $("dashInd").addEventListener("click", async (e) => {
   if (act === "edit") { editingIndId = id; renderDash(); return; }
   if (act === "cancel") { editingIndId = null; renderDash(); return; }
   if (act === "save") {
-    const name = $("eName").value.trim(), cls = $("eCls").value.trim();
+    const name = $("eName").value.trim(), cls = $("eCls").value, year = $("eYr").value;
     const chosen = [...document.querySelectorAll('input[name="eComp"]:checked')].map(c => c.value);
-    if (!name || !cls) return toast("Name and class are required");
+    if (!name) return toast("Name is required");
+    if (!cls || !year) return toast("Choose a class and year");
     if (!chosen.length) return toast("Choose at least one competition");
     if (chosen.length > MAX_IND) return toast("Maximum 4 items per participant");
     try {
-      await api("PATCH", "/api/individuals/" + id, { name, cls, comps: chosen });
+      await api("PATCH", "/api/individuals/" + id, { name, cls, year, comps: chosen });
       editingIndId = null;
       toast("Participant updated");
       await refresh();
@@ -233,15 +288,17 @@ $("dashGrp").addEventListener("click", async (e) => {
   if (act === "edit") { editingGrpId = id; renderDash(); return; }
   if (act === "cancel") { editingGrpId = null; renderDash(); return; }
   if (act === "save") {
-    const leader = $("geLeader").value.trim(), leaderCls = $("geLeaderCls").value.trim();
+    const leader = $("geLeader").value.trim(), leaderCls = $("geLeaderCls").value, leaderYear = $("geLeaderYr").value;
     const members = [...document.querySelectorAll(".gemRow")].map(r => ({
       name: r.querySelector(".geMem").value.trim(),
-      cls: r.querySelector(".geMemCls").value.trim(),
+      cls: r.querySelector(".geMemCls").value,
+      year: r.querySelector(".geMemYr").value,
     }));
-    if (!leader || !leaderCls) return toast("Team leader name and class are required");
-    if (members.some(m => !m.name || !m.cls)) return toast("Each member needs a name and class");
+    if (!leader) return toast("Team leader name is required");
+    if (!leaderCls || !leaderYear) return toast("Choose the leader's class and year");
+    if (members.some(m => !m.name || !m.cls || !m.year)) return toast("Each member needs a name, class and year");
     try {
-      await api("PATCH", "/api/groups/" + id, { leader, leaderCls, members });
+      await api("PATCH", "/api/groups/" + id, { leader, leaderCls, leaderYear, members });
       editingGrpId = null;
       toast("Group updated");
       await refresh();

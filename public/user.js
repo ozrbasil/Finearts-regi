@@ -115,12 +115,14 @@ function grpCards(G, canEdit) {
     </tbody></table></div>`;
 }
 
-// Only names can change: the leader's class, member classes and competitions are shown as plain text.
+// Names and classes can change. Competitions and the number of members are shown as plain text.
 function grpEditRow(g) {
   return `<tr>
     <td><input type="text" id="geLeader" value="${esc(g.leader)}"></td>
-    <td>${esc(g.leaderCls)}</td>
-    <td>${g.members.map(m => `<div style="margin-bottom:6px"><input type="text" class="geMem" value="${esc(m.name)}"> <span class="hint">· ${esc(m.cls)}</span></div>`).join("")}</td>
+    <td><input type="text" id="geLeaderCls" value="${esc(g.leaderCls)}"></td>
+    <td>${g.members.map(m => `<div class="gemRow" style="display:flex;gap:6px;margin-bottom:6px">
+      <input type="text" class="geMem" value="${esc(m.name)}">
+      <input type="text" class="geMemCls" value="${esc(m.cls)}"></div>`).join("")}</td>
     <td><div class="chips">${g.comps.map(c => `<span class="chip">${esc(c)}</span>`).join("")}</div></td>
     <td><div class="acts"><button class="btn sm" type="button" data-grp-act="save" data-id="${g.id}">Save</button>
     <button class="btn ghost sm" type="button" data-grp-act="cancel">Cancel</button></div></td></tr>`;
@@ -231,12 +233,15 @@ $("dashGrp").addEventListener("click", async (e) => {
   if (act === "edit") { editingGrpId = id; renderDash(); return; }
   if (act === "cancel") { editingGrpId = null; renderDash(); return; }
   if (act === "save") {
-    const leader = $("geLeader").value.trim();
-    const memberNames = [...document.querySelectorAll(".geMem")].map(i => i.value.trim());
-    if (!leader) return toast("Team leader name is required");
-    if (memberNames.some(n => !n)) return toast("Each member needs a name");
+    const leader = $("geLeader").value.trim(), leaderCls = $("geLeaderCls").value.trim();
+    const members = [...document.querySelectorAll(".gemRow")].map(r => ({
+      name: r.querySelector(".geMem").value.trim(),
+      cls: r.querySelector(".geMemCls").value.trim(),
+    }));
+    if (!leader || !leaderCls) return toast("Team leader name and class are required");
+    if (members.some(m => !m.name || !m.cls)) return toast("Each member needs a name and class");
     try {
-      await api("PATCH", "/api/groups/" + id, { leader, memberNames });
+      await api("PATCH", "/api/groups/" + id, { leader, leaderCls, members });
       editingGrpId = null;
       toast("Group updated");
       await refresh();

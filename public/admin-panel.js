@@ -129,15 +129,24 @@ function renderAdminRegs() {
 
 function indRows(t) {
   const rows = [["Name", "Class", "Team", "Competition"]];
-  inds.filter(x => x.team === t).sort(byOrder).forEach(p => p.comps.forEach(c => rows.push([p.name, p.cls, teamName(t), c])));
+  inds.filter(x => x.team === t).sort(byOrder).forEach(p =>
+    rows.push([p.name, p.cls, teamName(t), p.comps.join(", ")]));
   return rows;
 }
+
 function grpRows(t) {
   const rows = [["Team Leader", "Leader Class", "Members", "Team Name", "Competition"]];
-  grps.filter(x => x.team === t).forEach(g => g.comps.forEach(c =>
-    rows.push([g.leader, g.leaderCls, g.members.map(m => `${m.name} (${m.cls})`).join("; "), teamName(t), c])));
+  grps.filter(x => x.team === t).forEach(g =>
+    rows.push([
+      g.leader,
+      g.leaderCls,
+      g.members.map(m => `${m.name} (${m.cls})`).join("; "),
+      teamName(t),
+      g.comps.join(", ")
+    ]));
   return rows;
 }
+
 const csvCell = (v) => `"${String(v).replace(/"/g, '""')}"`;
 
 /* ----- Events ----- */

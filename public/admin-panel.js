@@ -1,12 +1,16 @@
-/* Admin panel: competitions, controls, registrations, teams */
+/* Admin panel: competitions, classes, controls, registrations, teams */
 const session = requireRole("admin");
-let comps = [], inds = [], grps = [], teamCreds = [];
+let comps = [], classes = [], inds = [], grps = [], teamCreds = [];
 let settings = { editingEnabled: false, registrationOpen: true };
 let lastState = "";
 let adminTeam = "", compTab = "individual", editingId = null, pendingDel = null;
+let editingClassId = null;
 let editingTeam = null, pendingReset = false;
 
-const VIEWS = { comps: "vComps", controls: "vControls", adminRegs: "vAdminRegs", teams: "vTeams" };
+const VIEWS = { comps: "vComps", classes: "vClasses", controls: "vControls", adminRegs: "vAdminRegs", teams: "vTeams" };
+
+// Class column for exports and screens: "Bcom finance - 1st". Older records without a year show just the class.
+const classLabel = (cls, year) => year ? `${cls} - ${year}` : cls;
 
 function showView(v) {
   Object.entries(VIEWS).forEach(([k, id]) => $(id).classList.toggle("hidden", k !== v));
@@ -16,6 +20,7 @@ function showView(v) {
 
 function renderAll() {
   renderComps();
+  renderClasses();
   renderControls();
   renderAdminRegs();
   renderTeams();
@@ -29,6 +34,7 @@ async function refresh() {
     if (snap === lastState) return;
     lastState = snap;
     comps = s.comps.sort(byOrder);
+    classes = (s.classes || []).sort(byOrder);
     inds = s.inds;
     grps = s.grps;
     teamCreds = s.teams;
@@ -55,6 +61,26 @@ function renderComps() {
 }
 
 const dupe = (name, id) => comps.some(c => c.type === compTab && c.id !== id && c.name.toLowerCase() === name.toLowerCase());
+
+/* ----- Classes and years ----- */
+const classTaken = (name, id) => classes.some(c => c.id !== id && c.name.toLowerCase() === name.toLowerCase());
+
+// "1st, 2nd, 3rd" becomes ["1st", "2nd", "3rd"]. Blanks and repeats are removed.
+function parseYears(text) {
+  return [...new Set(text.split(",").map(s => s.trim()).filter(Boolean))];
+}
+
+function renderClasses() {
+  $("classList").innerHTML = classes.length ? classes.map(c => {
+    if (editingClassId === c.id) return `<div class="item" style="flex-wrap:wrap;gap:8px">
+      <input type="text" id="clsEditName" value="${esc(c.name)}" placeholder="Class name">
+      <input type="text" id="clsEditYears" value="${esc(c.years.join(", "))}" placeholder="Years e.g. 1st, 2nd, 3rd">
+      <div class="acts"><button class="btn sm" type="button" data-cact="save" data-id="${c.id}">Save</button>
+      <button class="btn ghost sm" type="button" data-cact="cancel">Cancel</button></div></div>`;
+    return `<div class="item"><span><strong>${esc(c.name)}</strong> <span class="hint">· ${esc(c.years.join(", "))}</span></span>
+      <div class="acts"><button class="btn ghost sm" type="button" data-cact="edit" data-id="${c.id}">Edit</button></div></div>`;
+  }).join("") : `<div class="empty" style="border:0">No classes yet. Add one below.</div>`;
+}
 
 /* ----- Controls ----- */
 function renderControls() {
@@ -92,7 +118,7 @@ const xlsxReady = () => typeof XLSX !== "undefined";
 function indListTable(I) {
   if (!I.length) return `<div class="empty">No individual participants yet.</div>`;
   return `<div class="table-wrap"><table><thead><tr><th>#</th><th>Name</th><th>Class</th><th>Competitions</th></tr></thead><tbody>
-    ${I.map((p, i) => `<tr><td>${i + 1}</td><td>${esc(p.name)}</td><td>${esc(p.cls)}</td>
+    ${I.map((p, i) => `<tr><td>${i + 1}</td><td>${esc(p.name)}</td><td>${esc(classLabel(p.cls, p.year))}</td>
     <td><div class="chips">${p.comps.map(c => `<span class="chip">${esc(c)}</span>`).join("")}</div></td></tr>`).join("")}
     </tbody></table></div>`;
 }
@@ -100,8 +126,8 @@ function indListTable(I) {
 function grpListCards(G) {
   if (!G.length) return `<div class="empty">No groups registered yet.</div>`;
   return `<div class="table-wrap"><table><thead><tr><th>Team Leader</th><th>Class</th><th>Members</th><th>Competitions</th></tr></thead><tbody>
-    ${G.map(g => `<tr><td>${esc(g.leader)}</td><td>${esc(g.leaderCls)}</td>
-    <td>${g.members.map(m => `<div>${esc(m.name)} <span class="hint">· ${esc(m.cls)}</span></div>`).join("")}</td>
+    ${G.map(g => `<tr><td>${esc(g.leader)}</td><td>${esc(classLabel(g.leaderCls, g.leaderYear))}</td>
+    <td>${g.members.map(m => `<div>${esc(m.name)} <span class="hint">· ${esc(classLabel(m.cls, m.year))}</span></div>`).join("")}</td>
     <td><div class="chips">${g.comps.map(c => `<span class="chip">${esc(c)}</span>`).join("")}</div></td></tr>`).join("")}
     </tbody></table></div>`;
 }
@@ -127,10 +153,11 @@ function renderAdminRegs() {
     ${grpListCards(G)}`;
 }
 
+// Only the Class column carries the year. Column layout and the member format are unchanged.
 function indRows(t) {
   const rows = [["Name", "Class", "Team", "Competition"]];
   inds.filter(x => x.team === t).sort(byOrder).forEach(p =>
-    rows.push([p.name, p.cls, teamName(t), p.comps.join(", ")]));
+    rows.push([p.name, classLabel(p.cls, p.year), teamName(t), p.comps.join(", ")]));
   return rows;
 }
 
@@ -139,7 +166,7 @@ function grpRows(t) {
   grps.filter(x => x.team === t).forEach(g =>
     rows.push([
       g.leader,
-      g.leaderCls,
+      classLabel(g.leaderCls, g.leaderYear),
       g.members.map(m => `${m.name} (${m.cls})`).join("; "),
       teamName(t),
       g.comps.join(", ")
@@ -219,6 +246,44 @@ $("addComp").addEventListener("submit", async (e) => {
   toast(msg);
 
   await refresh();
+});
+
+$("classList").addEventListener("click", async (e) => {
+  const b = e.target.closest("button[data-cact]");
+  if (!b) return;
+  const act = b.dataset.cact, id = b.dataset.id;
+  if (act === "edit") { editingClassId = id; renderClasses(); $("clsEditName")?.focus(); return; }
+  if (act === "cancel") { editingClassId = null; renderClasses(); return; }
+  if (act === "save") {
+    const name = $("clsEditName").value.trim();
+    const years = parseYears($("clsEditYears").value);
+    if (!name) return toast("Class name cannot be empty");
+    if (!years.length) return toast("Enter at least one year");
+    if (classTaken(name, id)) return toast("That class already exists");
+    try {
+      await api("PATCH", "/api/classes/" + id, { name, years });
+      editingClassId = null;
+      toast("Class updated");
+      await refresh();
+    } catch (err) { toast(err.message); }
+    renderClasses();
+  }
+});
+
+$("addClass").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const name = $("newClassName").value.trim();
+  const years = parseYears($("newClassYears").value);
+  if (!name) return;
+  if (!years.length) return toast("Enter at least one year");
+  if (classTaken(name, null)) return toast("That class already exists");
+  try {
+    await api("POST", "/api/classes", { name, years });
+    $("newClassName").value = "";
+    $("newClassYears").value = "";
+    toast("Class added");
+    await refresh();
+  } catch (err) { toast(err.message); }
 });
 
 $("controls").addEventListener("click", async (e) => {

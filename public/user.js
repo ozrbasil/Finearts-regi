@@ -3,7 +3,7 @@ const session = requireRole("team");
 const MAX_IND = 4;
 let comps = [], inds = [], grps = [];
 let settings = { editingEnabled: false, registrationOpen: true };
-let lastState = "", formKey = "", editingIndId = null;
+let lastState = "", formKey = "", editingIndId = null, editingGrpId = null;
 
 function showView(v) {
   $("vRegistration").classList.toggle("hidden", v !== "registration");
@@ -15,6 +15,7 @@ function showView(v) {
 function renderAll() {
   renderRegState();
   renderTeamForms();
+  applyGroupTaken();
   renderDash();
 }
 
@@ -55,6 +56,19 @@ function renderTeamForms() {
   if (!$("memberList").children.length) { addMemberRow(); addMemberRow(); }
 }
 
+// Group competitions this team has already registered are greyed out so they cannot be picked again.
+function applyGroupTaken() {
+  const taken = new Set(session ? grps.filter(g => g.team === session.team).flatMap(g => g.comps) : []);
+  document.querySelectorAll('input[name="grp"]').forEach(cb => {
+    const isTaken = taken.has(cb.value);
+    cb.disabled = isTaken;
+    if (isTaken) cb.checked = false;
+    const label = cb.closest("label");
+    label.classList.toggle("taken", isTaken);
+    label.querySelector("span").textContent = isTaken ? cb.value + " (already registered)" : cb.value;
+  });
+}
+
 function updateIndCount() {
   $("iCount").textContent = document.querySelectorAll('input[name="ind"]:checked').length + " / " + MAX_IND;
 }
@@ -91,26 +105,38 @@ function editRow(p, i) {
     <button class="btn ghost sm" type="button" data-ind-act="cancel">Cancel</button></div></td></tr>`;
 }
 
-function grpCards(G) {
+function grpCards(G, canEdit) {
   if (!G.length) return `<div class="empty">No groups registered yet.</div>`;
-  return `<div class="table-wrap"><table><thead><tr><th>Team Leader</th><th>Class</th><th>Members</th><th>Competitions</th></tr></thead><tbody>
-    ${G.map(g => `<tr><td>${esc(g.leader)}</td><td>${esc(g.leaderCls)}</td>
+  return `<div class="table-wrap"><table><thead><tr><th>Team Leader</th><th>Class</th><th>Members</th><th>Competitions</th>${canEdit ? "<th></th>" : ""}</tr></thead><tbody>
+    ${G.map(g => canEdit && editingGrpId === g.id ? grpEditRow(g) : `<tr><td>${esc(g.leader)}</td><td>${esc(g.leaderCls)}</td>
     <td>${g.members.map(m => `<div>${esc(m.name)} <span class="hint">· ${esc(m.cls)}</span></div>`).join("")}</td>
-    <td><div class="chips">${g.comps.map(c => `<span class="chip">${esc(c)}</span>`).join("")}</div></td></tr>`).join("")}
+    <td><div class="chips">${g.comps.map(c => `<span class="chip">${esc(c)}</span>`).join("")}</div></td>
+    ${canEdit ? `<td><button class="btn ghost sm" type="button" data-grp-act="edit" data-id="${g.id}">Edit</button></td>` : ""}</tr>`).join("")}
     </tbody></table></div>`;
+}
+
+// Only names can change: the leader's class, member classes and competitions are shown as plain text.
+function grpEditRow(g) {
+  return `<tr>
+    <td><input type="text" id="geLeader" value="${esc(g.leader)}"></td>
+    <td>${esc(g.leaderCls)}</td>
+    <td>${g.members.map(m => `<div style="margin-bottom:6px"><input type="text" class="geMem" value="${esc(m.name)}"> <span class="hint">· ${esc(m.cls)}</span></div>`).join("")}</td>
+    <td><div class="chips">${g.comps.map(c => `<span class="chip">${esc(c)}</span>`).join("")}</div></td>
+    <td><div class="acts"><button class="btn sm" type="button" data-grp-act="save" data-id="${g.id}">Save</button>
+    <button class="btn ghost sm" type="button" data-grp-act="cancel">Cancel</button></div></td></tr>`;
 }
 
 function renderDash() {
   if (!session) return;
   const t = session.team;
-  if (!settings.editingEnabled) editingIndId = null;
+  if (!settings.editingEnabled) { editingIndId = null; editingGrpId = null; }
   const I = inds.filter(x => x.team === t).sort(byOrder), G = grps.filter(x => x.team === t);
   $("dashLead").textContent = "Showing registrations for " + teamName(t) + " only.";
   $("sInd").textContent = I.length;
   $("sGrp").textContent = G.length;
   $("sReg").textContent = I.length + G.length;
   $("dashInd").innerHTML = indTable(I, settings.editingEnabled);
-  $("dashGrp").innerHTML = grpCards(G);
+  $("dashGrp").innerHTML = grpCards(G, settings.editingEnabled);
 }
 
 /* ----- Events ----- */
@@ -192,6 +218,27 @@ $("dashInd").addEventListener("click", async (e) => {
       await api("PATCH", "/api/individuals/" + id, { name, cls, comps: chosen });
       editingIndId = null;
       toast("Participant updated");
+      await refresh();
+    } catch (err) { toast(err.message); }
+    renderDash();
+  }
+});
+
+$("dashGrp").addEventListener("click", async (e) => {
+  const b = e.target.closest("button[data-grp-act]");
+  if (!b) return;
+  const act = b.dataset.grpAct, id = b.dataset.id;
+  if (act === "edit") { editingGrpId = id; renderDash(); return; }
+  if (act === "cancel") { editingGrpId = null; renderDash(); return; }
+  if (act === "save") {
+    const leader = $("geLeader").value.trim();
+    const memberNames = [...document.querySelectorAll(".geMem")].map(i => i.value.trim());
+    if (!leader) return toast("Team leader name is required");
+    if (memberNames.some(n => !n)) return toast("Each member needs a name");
+    try {
+      await api("PATCH", "/api/groups/" + id, { leader, memberNames });
+      editingGrpId = null;
+      toast("Group updated");
       await refresh();
     } catch (err) { toast(err.message); }
     renderDash();

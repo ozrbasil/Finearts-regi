@@ -14,6 +14,7 @@
   <aside>
     <div class="brand">Fine Arts Registration<small>Admin panel</small></div>
     <button class="nav active" type="button" data-view="comps">Competitions</button>
+    <button class="nav" type="button" data-view="classes">Classes</button>
     <button class="nav" type="button" data-view="controls">Controls</button>
     <button class="nav" type="button" data-view="adminRegs">Registrations</button>
     <button class="nav" type="button" data-view="teams">Teams</button>
@@ -39,6 +40,20 @@
         <form id="addComp" class="addrow" autocomplete="off" style="flex-direction:column;align-items:stretch">
           <textarea id="newComps" rows="4" placeholder="New competition names, one per line" required></textarea>
           <button class="btn" type="submit" style="align-self:flex-end;margin-top:8px">Add</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- Classes -->
+    <section id="vClasses" class="hidden">
+      <h2>Classes</h2>
+      <p class="lead">Add classes and their years. Users choose from this list when they register.</p>
+      <div class="card" style="padding:6px 16px 16px">
+        <div id="classList"></div>
+        <form id="addClass" class="addrow" autocomplete="off" style="flex-wrap:wrap">
+          <input type="text" id="newClassName" placeholder="Class name e.g. Bcom finance" required>
+          <input type="text" id="newClassYears" placeholder="Years e.g. 1st, 2nd, 3rd" required>
+          <button class="btn" type="submit">Add</button>
         </form>
       </div>
     </section>

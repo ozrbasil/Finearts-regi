@@ -160,8 +160,33 @@ app.post("/api/groups", requireAuth("team"), wrap(async (req, res) => {
   const comps = await pickComps(req.body.comps, "group");
   if (!comps) return bad(res, "Choose valid group competitions.");
   if (!comps.length) return bad(res, "Choose a group competition.");
+
+  // A team may register for each group competition only once.
+  const existing = await db.collection("groups").find({ team: req.user.team, comps: { $in: comps } }).toArray();
+  if (existing.length) {
+    const already = comps.filter(c => existing.some(g => g.comps.includes(c)));
+    return bad(res, `Your team is already registered for: ${already.join(", ")}.`, 409);
+  }
+
   await db.collection("groups").insertOne({ _id: newId(), team: req.user.team, leader, leaderCls, members, comps, createdAt: Date.now() });
   res.status(201).json({ ok: true });
+}));
+
+// Editing a group changes only the team leader's name and the member names.
+// Classes, competitions and the number of members stay as they were registered.
+app.patch("/api/groups/:id", requireAuth("team"), wrap(async (req, res) => {
+  const col = db.collection("groups");
+  const doc = await col.findOne({ _id: req.params.id, team: req.user.team });
+  if (!doc) return bad(res, "Group not found.", 404);
+  if (!(await getSettings()).editingEnabled) return bad(res, "Editing is turned off by the admin.", 403);
+  const leader = clean(req.body.leader);
+  const memberNames = Array.isArray(req.body.memberNames) ? req.body.memberNames.map(clean) : [];
+  if (!leader) return bad(res, "Team leader name is required.");
+  if (memberNames.length !== doc.members.length) return bad(res, "Member list does not match the registered group.");
+  if (memberNames.some(n => !n)) return bad(res, "Each member needs a name.");
+  const members = doc.members.map((m, i) => ({ ...m, name: memberNames[i] }));
+  await col.updateOne({ _id: doc._id }, { $set: { leader, members } });
+  res.json({ ok: true });
 }));
 
 /* ----- Admin: controls ----- */

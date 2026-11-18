@@ -303,6 +303,12 @@ app.patch("/api/classes/:id", requireAuth("admin"), wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
+app.delete("/api/classes/:id", requireAuth("admin"), wrap(async (req, res) => {
+  const r = await db.collection("classes").deleteOne({ _id: req.params.id });
+  if (!r.deletedCount) return bad(res, "Class not found.", 404);
+  res.json({ ok: true });
+}));
+
 /* ----- Admin: team logins ----- */
 app.patch("/api/teams/:n", requireAuth("admin"), wrap(async (req, res) => {
   const n = Number(req.params.n);

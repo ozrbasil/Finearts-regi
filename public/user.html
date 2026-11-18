@@ -36,7 +36,10 @@
       <form id="indForm" class="card" autocomplete="off">
         <div class="row">
           <label>Participant name<input type="text" id="iName" required></label>
-          <label>Class<input type="text" id="iClass" placeholder="e.g. 8CA 2" required></label>
+          <span class="pair" style="display:contents">
+            <label>Class<select id="iClass" class="clsSel" required></select></label>
+            <label>Year<select id="iYr" class="yrSel" required></select></label>
+          </span>
         </div>
         <fieldset>
           <legend>Choose competitions <span class="count" id="iCount">0 / 4</span></legend>
@@ -51,7 +54,10 @@
           <legend>Team leader</legend>
           <div class="row">
             <label>Name<input type="text" id="gLeader" required></label>
-            <label>Class<input type="text" id="gLeaderCls" placeholder="e.g. 8CA 2" required></label>
+            <span class="pair" style="display:contents">
+              <label>Class<select id="gLeaderCls" class="clsSel" required></select></label>
+              <label>Year<select id="gLeaderYr" class="yrSel" required></select></label>
+            </span>
           </div>
         </fieldset>
         <fieldset>

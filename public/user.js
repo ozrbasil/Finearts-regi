@@ -1,6 +1,7 @@
 /* User panel: registration and My Dashboard */
 const session = requireRole("team");
 const MAX_IND = 4;
+const MAX_MEMBERS = 50;
 let comps = [], classes = [], inds = [], grps = [];
 let settings = { editingEnabled: false, registrationOpen: true };
 let lastState = "", formKey = "", editingIndId = null, editingGrpId = null;
@@ -164,14 +165,28 @@ function grpEditRow(g) {
     <td><span class="pair" style="display:flex;gap:6px">
       <select id="geLeaderCls" class="clsSel">${clsOptions(g.leaderCls)}</select>
       <select id="geLeaderYr" class="yrSel">${yearOptions(g.leaderCls, g.leaderYear)}</select></span></td>
-    <td>${g.members.map(m => `<div class="gemRow" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
+    <td><div class="gemList">${g.members.map(m => `<div class="gemRow" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
       <input type="text" class="geMem" value="${esc(m.name)}">
       <span class="pair" style="display:flex;gap:6px">
         <select class="geMemCls clsSel">${clsOptions(m.cls)}</select>
-        <select class="geMemYr yrSel">${yearOptions(m.cls, m.year)}</select></span></div>`).join("")}</td>
+        <select class="geMemYr yrSel">${yearOptions(m.cls, m.year)}</select></span></div>`).join("")}</div>
+      <div style="margin-top:6px"><button type="button" class="btn ghost sm" data-grp-act="addmem">+ Add member</button></div></td>
     <td><div class="chips">${g.comps.map(c => `<span class="chip">${esc(c)}</span>`).join("")}</div></td>
     <td><div class="acts"><button class="btn sm" type="button" data-grp-act="save" data-id="${g.id}">Save</button>
     <button class="btn ghost sm" type="button" data-grp-act="cancel">Cancel</button></div></td></tr>`;
+}
+
+// A blank row for a member the user is adding during an edit. It can be removed again before saving.
+function newGemRow() {
+  const div = document.createElement("div");
+  div.className = "gemRow new";
+  div.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px";
+  div.innerHTML = `<input type="text" class="geMem" placeholder="Member name">
+    <span class="pair" style="display:flex;gap:6px">
+      <select class="geMemCls clsSel" aria-label="Member class">${clsOptions("")}</select>
+      <select class="geMemYr yrSel" aria-label="Member year">${yearOptions("", "")}</select></span>
+    <button type="button" class="btn ghost sm" data-gem-act="removeNew" aria-label="Remove new member">✕</button>`;
+  return div;
 }
 
 function renderDash() {
@@ -293,9 +308,17 @@ $("dashInd").addEventListener("click", async (e) => {
 });
 
 $("dashGrp").addEventListener("click", async (e) => {
+  const rm = e.target.closest("button[data-gem-act='removeNew']");
+  if (rm) { rm.closest(".gemRow").remove(); return; }
   const b = e.target.closest("button[data-grp-act]");
   if (!b) return;
   const act = b.dataset.grpAct, id = b.dataset.id;
+  if (act === "addmem") {
+    const list = b.closest("td").querySelector(".gemList");
+    if (list.querySelectorAll(".gemRow").length >= MAX_MEMBERS) return toast("Maximum " + MAX_MEMBERS + " members per group");
+    list.appendChild(newGemRow());
+    return;
+  }
   if (act === "edit") { editingGrpId = id; renderDash(); return; }
   if (act === "cancel") { editingGrpId = null; renderDash(); return; }
   if (act === "remove") {
@@ -311,11 +334,16 @@ $("dashGrp").addEventListener("click", async (e) => {
   }
   if (act === "save") {
     const leader = $("geLeader").value.trim(), leaderCls = $("geLeaderCls").value, leaderYear = $("geLeaderYr").value;
-    const members = [...document.querySelectorAll(".gemRow")].map(r => ({
-      name: r.querySelector(".geMem").value.trim(),
-      cls: r.querySelector(".geMemCls").value,
-      year: r.querySelector(".geMemYr").value,
-    }));
+    const members = [...document.querySelectorAll(".gemRow")]
+      .map(r => ({
+        name: r.querySelector(".geMem").value.trim(),
+        cls: r.querySelector(".geMemCls").value,
+        year: r.querySelector(".geMemYr").value,
+        blankNew: r.classList.contains("new") && !r.querySelector(".geMem").value.trim()
+          && !r.querySelector(".geMemCls").value && !r.querySelector(".geMemYr").value,
+      }))
+      .filter(m => !m.blankNew)
+      .map(({ blankNew, ...m }) => m);
     if (!leader) return toast("Team leader name is required");
     if (!leaderCls || !leaderYear) return toast("Choose the leader's class and year");
     if (members.some(m => !m.name || !m.cls || !m.year)) return toast("Each member needs a name, class and year");

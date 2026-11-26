@@ -130,7 +130,7 @@ function indTable(I, canEdit) {
   return `<div class="table-wrap"><table><thead><tr><th>#</th><th>Name</th><th>Class</th><th>Competitions</th>${canEdit ? "<th></th>" : ""}</tr></thead><tbody>
     ${I.map((p, i) => canEdit && editingIndId === p.id ? editRow(p, i) : `<tr><td>${i + 1}</td><td>${esc(p.name)}</td><td>${esc(classLabel(p.cls, p.year))}</td>
     <td><div class="chips">${p.comps.map(c => `<span class="chip">${esc(c)}</span>`).join("")}</div></td>
-    ${canEdit ? `<td><button class="btn ghost sm" type="button" data-ind-act="edit" data-id="${p.id}">Edit</button></td>` : ""}</tr>`).join("")}
+    ${canEdit ? `<td><div class="acts"><button class="btn ghost sm" type="button" data-ind-act="edit" data-id="${p.id}">Edit</button><button class="btn ghost sm danger" type="button" data-ind-act="remove" data-id="${p.id}">Remove</button></div></td>` : ""}</tr>`).join("")}
     </tbody></table></div>`;
 }
 
@@ -153,7 +153,7 @@ function grpCards(G, canEdit) {
     ${G.map(g => canEdit && editingGrpId === g.id ? grpEditRow(g) : `<tr><td>${esc(g.leader)}</td><td>${esc(classLabel(g.leaderCls, g.leaderYear))}</td>
     <td>${g.members.map(m => `<div>${esc(m.name)} <span class="hint">· ${esc(classLabel(m.cls, m.year))}</span></div>`).join("")}</td>
     <td><div class="chips">${g.comps.map(c => `<span class="chip">${esc(c)}</span>`).join("")}</div></td>
-    ${canEdit ? `<td><button class="btn ghost sm" type="button" data-grp-act="edit" data-id="${g.id}">Edit</button></td>` : ""}</tr>`).join("")}
+    ${canEdit ? `<td><div class="acts"><button class="btn ghost sm" type="button" data-grp-act="edit" data-id="${g.id}">Edit</button><button class="btn ghost sm danger" type="button" data-grp-act="remove" data-id="${g.id}">Remove</button></div></td>` : ""}</tr>`).join("")}
     </tbody></table></div>`;
 }
 
@@ -264,6 +264,17 @@ $("dashInd").addEventListener("click", async (e) => {
   const act = b.dataset.indAct, id = b.dataset.id;
   if (act === "edit") { editingIndId = id; renderDash(); return; }
   if (act === "cancel") { editingIndId = null; renderDash(); return; }
+  if (act === "remove") {
+    if (!confirm("Remove this participant and all their competitions? This cannot be undone.")) return;
+    try {
+      await api("DELETE", "/api/individuals/" + id);
+      if (editingIndId === id) editingIndId = null;
+      toast("Participant removed");
+      await refresh();
+    } catch (err) { toast(err.message); }
+    renderDash();
+    return;
+  }
   if (act === "save") {
     const name = $("eName").value.trim(), cls = $("eCls").value, year = $("eYr").value;
     const chosen = [...document.querySelectorAll('input[name="eComp"]:checked')].map(c => c.value);
@@ -287,6 +298,17 @@ $("dashGrp").addEventListener("click", async (e) => {
   const act = b.dataset.grpAct, id = b.dataset.id;
   if (act === "edit") { editingGrpId = id; renderDash(); return; }
   if (act === "cancel") { editingGrpId = null; renderDash(); return; }
+  if (act === "remove") {
+    if (!confirm("Remove this group? This cannot be undone.")) return;
+    try {
+      await api("DELETE", "/api/groups/" + id);
+      if (editingGrpId === id) editingGrpId = null;
+      toast("Group removed");
+      await refresh();
+    } catch (err) { toast(err.message); }
+    renderDash();
+    return;
+  }
   if (act === "save") {
     const leader = $("geLeader").value.trim(), leaderCls = $("geLeaderCls").value, leaderYear = $("geLeaderYr").value;
     const members = [...document.querySelectorAll(".gemRow")].map(r => ({

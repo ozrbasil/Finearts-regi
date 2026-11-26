@@ -235,6 +235,21 @@ app.patch("/api/groups/:id", requireAuth("team"), wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
+// Removing a registration is allowed only while the admin has editing turned on, and only for the team's own entries.
+app.delete("/api/individuals/:id", requireAuth("team"), wrap(async (req, res) => {
+  if (!(await getSettings()).editingEnabled) return bad(res, "Editing is turned off by the admin.", 403);
+  const r = await db.collection("individuals").deleteOne({ _id: req.params.id, team: req.user.team });
+  if (!r.deletedCount) return bad(res, "Participant not found.", 404);
+  res.json({ ok: true });
+}));
+
+app.delete("/api/groups/:id", requireAuth("team"), wrap(async (req, res) => {
+  if (!(await getSettings()).editingEnabled) return bad(res, "Editing is turned off by the admin.", 403);
+  const r = await db.collection("groups").deleteOne({ _id: req.params.id, team: req.user.team });
+  if (!r.deletedCount) return bad(res, "Group not found.", 404);
+  res.json({ ok: true });
+}));
+
 /* ----- Admin: controls ----- */
 app.patch("/api/admin/settings", requireAuth("admin"), wrap(async (req, res) => {
   const $set = {};

@@ -219,10 +219,12 @@ app.patch("/api/groups/:id", requireAuth("team"), wrap(async (req, res) => {
   const leaderClass = await pickClass(req.body.leaderCls, req.body.leaderYear);
   if (!leader || !leaderClass) return bad(res, "Team leader name, class and year are required.");
 
+  // Existing members must all be sent back (they can be edited, not removed). Extra entries are new members.
   const edits = Array.isArray(req.body.members) ? req.body.members : [];
-  if (edits.length !== doc.members.length) return bad(res, "Member list does not match the registered group.");
+  if (edits.length < doc.members.length) return bad(res, "Member list does not match the registered group.");
+  if (edits.length > 50) return bad(res, "Too many members.");
   const members = [];
-  for (let i = 0; i < doc.members.length; i++) {
+  for (let i = 0; i < edits.length; i++) {
     const name = clean(edits[i]?.name);
     const pc = await pickClass(edits[i]?.cls, edits[i]?.year);
     if (!name || !pc) return bad(res, "Each member needs a name, class and year.");

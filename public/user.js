@@ -158,8 +158,15 @@ function grpCards(G, canEdit) {
     </tbody></table></div>`;
 }
 
-// Names, classes and years can change. Competitions and the number of members are shown as plain text.
+// Names, classes, years, members and competitions can change. Competitions this team already holds in another group are disabled.
 function grpEditRow(g) {
+  const grpList = comps.filter(c => c.type === "group").map(c => c.name);
+  const allGrpComps = [...new Set([...grpList, ...g.comps])];
+  const takenElsewhere = new Set(grps.filter(x => x.team === g.team && x.id !== g.id).flatMap(x => x.comps));
+  const compBoxes = allGrpComps.map(n => {
+    const taken = takenElsewhere.has(n);
+    return `<label class="${taken ? "taken" : ""}"><input type="checkbox" name="gComp" value="${esc(n)}"${g.comps.includes(n) ? " checked" : ""}${taken ? " disabled" : ""}><span>${esc(n)}${taken ? " (already registered)" : ""}</span></label>`;
+  }).join("") || `<span class="hint">No group competitions yet.</span>`;
   return `<tr>
     <td><input type="text" id="geLeader" value="${esc(g.leader)}"></td>
     <td><span class="pair" style="display:flex;gap:6px">
@@ -169,9 +176,10 @@ function grpEditRow(g) {
       <input type="text" class="geMem" value="${esc(m.name)}">
       <span class="pair" style="display:flex;gap:6px">
         <select class="geMemCls clsSel">${clsOptions(m.cls)}</select>
-        <select class="geMemYr yrSel">${yearOptions(m.cls, m.year)}</select></span></div>`).join("")}</div>
+        <select class="geMemYr yrSel">${yearOptions(m.cls, m.year)}</select></span>
+        <button type="button" class="btn ghost sm danger" data-gem-act="removeMember" aria-label="Remove member">✕</button></div>`).join("")}</div>
       <div style="margin-top:6px"><button type="button" class="btn ghost sm" data-grp-act="addmem">+ Add member</button></div></td>
-    <td><div class="chips">${g.comps.map(c => `<span class="chip">${esc(c)}</span>`).join("")}</div></td>
+    <td><div class="checks">${compBoxes}</div></td>
     <td><div class="acts"><button class="btn sm" type="button" data-grp-act="save" data-id="${g.id}">Save</button>
     <button class="btn ghost sm" type="button" data-grp-act="cancel">Cancel</button></div></td></tr>`;
 }
@@ -185,7 +193,7 @@ function newGemRow() {
     <span class="pair" style="display:flex;gap:6px">
       <select class="geMemCls clsSel" aria-label="Member class">${clsOptions("")}</select>
       <select class="geMemYr yrSel" aria-label="Member year">${yearOptions("", "")}</select></span>
-    <button type="button" class="btn ghost sm" data-gem-act="removeNew" aria-label="Remove new member">✕</button>`;
+    <button type="button" class="btn ghost sm danger" data-gem-act="removeMember" aria-label="Remove member">✕</button>`;
   return div;
 }
 
@@ -308,8 +316,13 @@ $("dashInd").addEventListener("click", async (e) => {
 });
 
 $("dashGrp").addEventListener("click", async (e) => {
-  const rm = e.target.closest("button[data-gem-act='removeNew']");
-  if (rm) { rm.closest(".gemRow").remove(); return; }
+  const rm = e.target.closest("button[data-gem-act='removeMember']");
+  if (rm) {
+    const list = rm.closest(".gemList");
+    if (list.querySelectorAll(".gemRow").length <= 1) return toast("A group needs at least one team member");
+    rm.closest(".gemRow").remove();
+    return;
+  }
   const b = e.target.closest("button[data-grp-act]");
   if (!b) return;
   const act = b.dataset.grpAct, id = b.dataset.id;
@@ -347,8 +360,10 @@ $("dashGrp").addEventListener("click", async (e) => {
     if (!leader) return toast("Team leader name is required");
     if (!leaderCls || !leaderYear) return toast("Choose the leader's class and year");
     if (members.some(m => !m.name || !m.cls || !m.year)) return toast("Each member needs a name, class and year");
+    const chosen = [...document.querySelectorAll('input[name="gComp"]:checked')].map(c => c.value);
+    if (!chosen.length) return toast("Choose a group competition");
     try {
-      await api("PATCH", "/api/groups/" + id, { leader, leaderCls, leaderYear, members });
+      await api("PATCH", "/api/groups/" + id, { leader, leaderCls, leaderYear, members, comps: chosen });
       editingGrpId = null;
       toast("Group updated");
       await refresh();

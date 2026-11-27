@@ -207,8 +207,8 @@ app.post("/api/groups", requireAuth("team"), wrap(async (req, res) => {
   res.status(201).json({ ok: true });
 }));
 
-// Editing a group changes the leader's name, class and year, and each member's name, class and year.
-// Competitions and the number of members stay as they were registered.
+// Editing a group changes the leader's name, class and year, each member's name, class and year, and the group competitions.
+// Team members can be added, edited or removed (at least one must remain).
 app.patch("/api/groups/:id", requireAuth("team"), wrap(async (req, res) => {
   const col = db.collection("groups");
   const doc = await col.findOne({ _id: req.params.id, team: req.user.team });
@@ -219,9 +219,9 @@ app.patch("/api/groups/:id", requireAuth("team"), wrap(async (req, res) => {
   const leaderClass = await pickClass(req.body.leaderCls, req.body.leaderYear);
   if (!leader || !leaderClass) return bad(res, "Team leader name, class and year are required.");
 
-  // Existing members must all be sent back (they can be edited, not removed). Extra entries are new members.
+  // The list sent back is the complete member list: members left out are removed, edited ones are updated, new ones are added.
   const edits = Array.isArray(req.body.members) ? req.body.members : [];
-  if (edits.length < doc.members.length) return bad(res, "Member list does not match the registered group.");
+  if (!edits.length) return bad(res, "A group needs at least one team member.");
   if (edits.length > 50) return bad(res, "Too many members.");
   const members = [];
   for (let i = 0; i < edits.length; i++) {
@@ -231,8 +231,24 @@ app.patch("/api/groups/:id", requireAuth("team"), wrap(async (req, res) => {
     members.push({ name, cls: pc.cls, year: pc.year });
   }
 
+  // Competitions: if sent, the list replaces the group's competitions. Each must be a valid group competition,
+  // and the team must not already be registered for it in another group.
+  let comps = doc.comps;
+  if (Array.isArray(req.body.comps)) {
+    const picked = await pickComps(req.body.comps, "group");
+    if (!picked) return bad(res, "Choose valid group competitions.");
+    if (!picked.length) return bad(res, "Choose a group competition.");
+    const others = await db.collection("groups")
+      .find({ team: req.user.team, _id: { $ne: doc._id }, comps: { $in: picked } }).toArray();
+    if (others.length) {
+      const already = picked.filter(c => others.some(g => g.comps.includes(c)));
+      return bad(res, `Your team is already registered for: ${already.join(", ")}.`, 409);
+    }
+    comps = picked;
+  }
+
   await col.updateOne({ _id: doc._id }, {
-    $set: { leader, leaderCls: leaderClass.cls, leaderYear: leaderClass.year, members },
+    $set: { leader, leaderCls: leaderClass.cls, leaderYear: leaderClass.year, members, comps },
   });
   res.json({ ok: true });
 }));

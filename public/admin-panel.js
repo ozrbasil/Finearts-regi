@@ -131,18 +131,28 @@ function renderTeams() {
 /* ----- Registrations ----- */
 const xlsxReady = () => typeof XLSX !== "undefined";
 
-function indListTable(I) {
+// Value of the "All Teams" option. Each team option uses its team number.
+const ALL_TEAMS = "all";
+const isAllTeams = () => adminTeam === ALL_TEAMS;
+
+// Registrations for the selected option: one team, or every team grouped by team.
+const scopeInds = () => (isAllTeams() ? inds : inds.filter(x => x.team === Number(adminTeam)))
+  .slice().sort((a, b) => (a.team - b.team) || byOrder(a, b));
+const scopeGrps = () => (isAllTeams() ? grps : grps.filter(x => x.team === Number(adminTeam)))
+  .slice().sort((a, b) => a.team - b.team);
+
+function indListTable(I, showTeam) {
   if (!I.length) return `<div class="empty">No individual participants yet.</div>`;
-  return `<div class="table-wrap"><table><thead><tr><th>#</th><th>Name</th><th>Class</th><th>Competitions</th></tr></thead><tbody>
-    ${I.map((p, i) => `<tr><td>${i + 1}</td><td>${esc(p.name)}</td><td>${esc(classLabel(p.cls, p.year))}</td>
+  return `<div class="table-wrap"><table><thead><tr><th>#</th>${showTeam ? "<th>Team</th>" : ""}<th>Name</th><th>Class</th><th>Competitions</th></tr></thead><tbody>
+    ${I.map((p, i) => `<tr><td>${i + 1}</td>${showTeam ? `<td>${teamName(p.team)}</td>` : ""}<td>${esc(p.name)}</td><td>${esc(classLabel(p.cls, p.year))}</td>
     <td><div class="chips">${p.comps.map(c => `<span class="chip">${esc(c)}</span>`).join("")}</div></td></tr>`).join("")}
     </tbody></table></div>`;
 }
 
-function grpListCards(G) {
+function grpListCards(G, showTeam) {
   if (!G.length) return `<div class="empty">No groups registered yet.</div>`;
-  return `<div class="table-wrap"><table><thead><tr><th>Team Leader</th><th>Class</th><th>Members</th><th>Competitions</th></tr></thead><tbody>
-    ${G.map(g => `<tr><td>${esc(g.leader)}</td><td>${esc(classLabel(g.leaderCls, g.leaderYear))}</td>
+  return `<div class="table-wrap"><table><thead><tr>${showTeam ? "<th>Team</th>" : ""}<th>Team Leader</th><th>Class</th><th>Members</th><th>Competitions</th></tr></thead><tbody>
+    ${G.map(g => `<tr>${showTeam ? `<td>${teamName(g.team)}</td>` : ""}<td>${esc(g.leader)}</td><td>${esc(classLabel(g.leaderCls, g.leaderYear))}</td>
     <td>${g.members.map(m => `<div>${esc(m.name)} <span class="hint">· ${esc(classLabel(m.cls, m.year))}</span></div>`).join("")}</td>
     <td><div class="chips">${g.comps.map(c => `<span class="chip">${esc(c)}</span>`).join("")}</div></td></tr>`).join("")}
     </tbody></table></div>`;
@@ -151,41 +161,41 @@ function grpListCards(G) {
 function renderAdminRegs() {
   const sel = $("teamSel");
   if (!sel.options.length) {
-    sel.innerHTML = `<option value="">Select Team</option>` + [1, 2, 3, 4].map(n => `<option value="${n}">${teamName(n)}</option>`).join("");
+    sel.innerHTML = `<option value="">Select Team</option><option value="${ALL_TEAMS}">All Teams</option>` +
+      [1, 2, 3, 4].map(n => `<option value="${n}">${teamName(n)}</option>`).join("");
   }
   sel.value = adminTeam;
   if (!adminTeam) { $("adminOut").innerHTML = `<div class="empty">Select a team to see its registrations.</div>`; return; }
-  const t = Number(adminTeam);
-  const I = inds.filter(x => x.team === t).sort(byOrder), G = grps.filter(x => x.team === t);
+  const I = scopeInds(), G = scopeGrps(), showTeam = isAllTeams();
   const dis = (ok) => ok ? "" : "disabled";
   $("adminOut").innerHTML = `
     <div class="sec"><span>Individual participants (${I.length})</span>
       <span class="acts"><button class="btn ghost sm" type="button" data-dl="ind-csv" ${dis(I.length)}>Download CSV</button>
       <button class="btn ghost sm" type="button" data-dl="ind-xlsx" ${dis(I.length && xlsxReady())}>Download Excel</button></span></div>
-    ${indListTable(I)}
+    ${indListTable(I, showTeam)}
     <div class="sec"><span>Groups (${G.length})</span>
       <span class="acts"><button class="btn ghost sm" type="button" data-dl="grp-csv" ${dis(G.length)}>Download CSV</button>
       <button class="btn ghost sm" type="button" data-dl="grp-xlsx" ${dis(G.length && xlsxReady())}>Download Excel</button></span></div>
-    ${grpListCards(G)}`;
+    ${grpListCards(G, showTeam)}`;
 }
 
 // Export: only the Class cell changes, to "Year, Class" (e.g. "3rd Year, Bcom Finance").
-// Column layout and the Members format are unchanged.
-function indRows(t) {
+// Column layout and the Members format are unchanged. Team column shows each row's own team.
+function indRows() {
   const rows = [["Name", "Class", "Team", "Competition"]];
-  inds.filter(x => x.team === t).sort(byOrder).forEach(p =>
-    rows.push([p.name, exportClass(p.cls, p.year), teamName(t), p.comps.join(", ")]));
+  scopeInds().forEach(p =>
+    rows.push([p.name, exportClass(p.cls, p.year), teamName(p.team), p.comps.join(", ")]));
   return rows;
 }
 
-function grpRows(t) {
+function grpRows() {
   const rows = [["Team Leader", "Leader Class", "Members", "Team Name", "Competition"]];
-  grps.filter(x => x.team === t).forEach(g =>
+  scopeGrps().forEach(g =>
     rows.push([
       g.leader,
       exportClass(g.leaderCls, g.leaderYear),
       g.members.map(m => `${m.name} (${m.cls})`).join("; "),
-      teamName(t),
+      teamName(g.team),
       g.comps.join(", ")
     ]));
   return rows;
@@ -387,11 +397,11 @@ $("teamSel").addEventListener("change", () => { adminTeam = $("teamSel").value; 
 $("adminOut").addEventListener("click", (e) => {
   const b = e.target.closest("button[data-dl]");
   if (!b) return;
-  const t = Number(adminTeam);
   const [kind, fmt] = b.dataset.dl.split("-");
   const isInd = kind === "ind";
-  const rows = isInd ? indRows(t) : grpRows(t);
-  const base = `${teamName(t)} - ${isInd ? "Individual" : "Group"} Registrations`;
+  const rows = isInd ? indRows() : grpRows();
+  const scopeName = isAllTeams() ? "All Teams" : teamName(Number(adminTeam));
+  const base = `${scopeName} - ${isInd ? "Individual" : "Group"} Registrations`;
   let blob, filename;
   if (fmt === "xlsx") {
     const wb = XLSX.utils.book_new();
